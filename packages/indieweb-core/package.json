@@ -1,0 +1,21 @@
+{
+  "name": "@opensourcetogether/indieweb-core",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mf2": "./src/mf2/index.ts",
+    "./kinds": "./src/kinds/index.ts",
+    "./xfn": "./src/xfn/index.ts",
+    "./webmention": "./src/webmention/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

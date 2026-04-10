@@ -1,0 +1,19 @@
+{
+  "name": "indieweb-astro",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/indieweb-core",
+    "packages/astro-indieweb",
+    "packages/emdash-indieweb"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

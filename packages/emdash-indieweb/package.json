@@ -1,0 +1,25 @@
+{
+  "name": "@opensourcetogether/emdash-indieweb",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sandbox": "./src/sandbox-entry.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@opensourcetogether/astro-indieweb": "workspace:*",
+    "@opensourcetogether/indieweb-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "emdash": "^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
