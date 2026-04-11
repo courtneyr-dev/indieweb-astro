@@ -275,6 +275,44 @@ async function saveIdentity(
 
 // ─── Post Kinds Admin ────────────────────────────────────────────────────
 
+const KIND_CATEGORIES: Array<{ label: string; slugs: string[] }> = [
+  {
+    label: "Content",
+    slugs: ["note", "article", "photo", "video", "audio", "chat"],
+  },
+  {
+    label: "Interactions",
+    slugs: [
+      "reply",
+      "like",
+      "repost",
+      "bookmark",
+      "rsvp",
+      "tag-reply",
+      "favorite",
+      "quotation",
+    ],
+  },
+  {
+    label: "Media & Life-logging",
+    slugs: [
+      "listen",
+      "watch",
+      "read",
+      "play",
+      "eat",
+      "drink",
+      "checkin",
+      "jam",
+      "mood",
+    ],
+  },
+  {
+    label: "Other",
+    slugs: ["event", "review", "recipe", "wish", "acquisition"],
+  },
+];
+
 async function buildPostKindsPage(ctx: PluginContext) {
   const enabledRaw = await ctx.kv.get<string>("settings:enabledKinds");
   const enabledKinds: string[] = enabledRaw
@@ -284,30 +322,86 @@ async function buildPostKindsPage(ctx: PluginContext) {
   const defaultKind =
     (await ctx.kv.get<string>("settings:defaultKind")) ?? "note";
 
-  const allSlugs = getAllSlugs();
-  const kindToggles = allSlugs.map((slug) => {
-    const kind = getPostKind(slug);
-    return {
-      type: "toggle" as const,
-      action_id: `kind_${slug}`,
-      label: kind?.name ?? slug,
-      initial_value: enabledKinds.includes(slug),
-    };
-  });
+  const kindFieldSetup = await ctx.kv.get<string>("settings:kindFieldCreated");
 
   const kindOptions = enabledKinds.map((slug) => ({
     label: getPostKind(slug)?.name ?? slug,
     value: slug,
   }));
 
+  // Build categorized toggle groups
+  const categoryBlocks: Array<Record<string, unknown>> = [];
+  for (const cat of KIND_CATEGORIES) {
+    categoryBlocks.push({
+      type: "section",
+      text: `**${cat.label}**`,
+    });
+    for (const slug of cat.slugs) {
+      const kind = getPostKind(slug);
+      categoryBlocks.push({
+        type: "toggle",
+        action_id: `kind_${slug}`,
+        label: kind?.name ?? slug,
+        initial_value: enabledKinds.includes(slug),
+      });
+    }
+  }
+
+  const setupBlocks: Array<Record<string, unknown>> = [];
+  if (kindFieldSetup !== "true") {
+    setupBlocks.push(
+      { type: "divider" },
+      {
+        type: "banner",
+        text: 'Post Kinds need a "Kind" field on your Posts collection to work. Click below to set it up.',
+        style: "info",
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: "Set up Kind field on Posts",
+            action_id: "setup_kind_field",
+            style: "primary",
+          },
+        ],
+      },
+    );
+  } else {
+    setupBlocks.push(
+      { type: "divider" },
+      {
+        type: "context",
+        text: 'The "Kind" field is set up on your Posts collection.',
+      },
+    );
+  }
+
   return {
     blocks: [
       { type: "header", text: "Post Kinds" },
       {
         type: "context",
-        text: "Configure which post kinds are available for your content. Each kind maps to specific microformats2 properties.",
+        text: "Configure which post kinds are available. Each kind maps to microformats2 properties for IndieWeb interoperability.",
       },
+      ...setupBlocks,
       { type: "divider" },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: "Enable All",
+            action_id: "enable_all_kinds",
+          },
+          {
+            type: "button",
+            text: "Disable All",
+            action_id: "disable_all_kinds",
+          },
+        ],
+      },
       {
         type: "form",
         block_id: "post-kinds-settings",
@@ -316,28 +410,16 @@ async function buildPostKindsPage(ctx: PluginContext) {
             type: "select",
             action_id: "defaultKind",
             label: "Default Kind",
-            options: kindOptions,
+            options:
+              kindOptions.length > 0
+                ? kindOptions
+                : [{ label: "Note", value: "note" }],
             initial_value: defaultKind,
           },
-          ...kindToggles,
+          ...categoryBlocks,
         ],
         submit: { label: "Save Post Kinds", action_id: "save_post_kinds" },
       },
-      { type: "divider" },
-      { type: "header", text: "Kind Reference" },
-      {
-        type: "context",
-        text: "Each kind determines the mf2 properties applied to your content.",
-      },
-      ...enabledKinds.map((slug) => {
-        const kind = getPostKind(slug);
-        if (!kind)
-          return { type: "context" as const, text: `Unknown kind: ${slug}` };
-        return {
-          type: "section" as const,
-          text: `**${kind.name}** — ${kind.citationRequired ? "Citation required" : "No citation"}\nProperties: \`${kind.mf2Properties.join("`, `")}\``,
-        };
-      }),
     ],
   };
 }
@@ -1054,6 +1136,101 @@ export default {
             ctx,
             (interaction.values as Record<string, unknown>) ?? {},
           );
+
+        // Post Kinds — Enable All / Disable All
+        if (
+          interaction.type === "button_click" &&
+          interaction.action_id === "enable_all_kinds"
+        ) {
+          const allSlugs = getAllSlugs();
+          await ctx.kv.set("settings:enabledKinds", JSON.stringify(allSlugs));
+          return {
+            ...(await buildPostKindsPage(ctx)),
+            toast: {
+              message: `All ${allSlugs.length} kinds enabled`,
+              type: "success" as const,
+            },
+          };
+        }
+
+        if (
+          interaction.type === "button_click" &&
+          interaction.action_id === "disable_all_kinds"
+        ) {
+          // Keep at least "note" enabled
+          await ctx.kv.set("settings:enabledKinds", JSON.stringify(["note"]));
+          await ctx.kv.set("settings:defaultKind", "note");
+          return {
+            ...(await buildPostKindsPage(ctx)),
+            toast: {
+              message: "All kinds disabled (Note kept as minimum)",
+              type: "success" as const,
+            },
+          };
+        }
+
+        // Post Kinds — Set up the Kind field on Posts collection
+        if (
+          interaction.type === "button_click" &&
+          interaction.action_id === "setup_kind_field"
+        ) {
+          try {
+            const enabledRaw = await ctx.kv.get<string>(
+              "settings:enabledKinds",
+            );
+            const enabledKinds: string[] = enabledRaw
+              ? JSON.parse(enabledRaw)
+              : [
+                  "note",
+                  "article",
+                  "photo",
+                  "reply",
+                  "like",
+                  "repost",
+                  "bookmark",
+                ];
+
+            const options = enabledKinds.map((slug) => ({
+              label: getPostKind(slug)?.name ?? slug,
+              value: slug,
+            }));
+
+            await ctx.http!.fetch(
+              `${ctx.site.url.replace(/\/$/, "")}/_emdash/api/schema/collections/posts/fields`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  slug: "kind",
+                  label: "Kind",
+                  type: "select",
+                  required: false,
+                  options,
+                  sortOrder: 5,
+                }),
+              },
+            );
+
+            await ctx.kv.set("settings:kindFieldCreated", "true");
+
+            return {
+              ...(await buildPostKindsPage(ctx)),
+              toast: {
+                message:
+                  'Kind field added to Posts — you\'ll see a "Kind" dropdown in the editor',
+                type: "success" as const,
+              },
+            };
+          } catch (err) {
+            return {
+              ...(await buildPostKindsPage(ctx)),
+              toast: {
+                message: `Failed to create field: ${err instanceof Error ? err.message : String(err)}`,
+                type: "error" as const,
+              },
+            };
+          }
+        }
 
         // Syndication (POSSE)
         if (

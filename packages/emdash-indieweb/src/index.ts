@@ -103,6 +103,11 @@ export function emdashIndieweb(
         label: "Relationships (XFN)",
         icon: "users",
       },
+      {
+        path: "/api-connections",
+        label: "API Connections",
+        icon: "key",
+      },
     ],
     adminWidgets: [
       {
