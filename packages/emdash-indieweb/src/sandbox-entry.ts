@@ -1142,7 +1142,7 @@ export default {
 
         // Post Kinds — Enable All / Disable All
         if (
-          interaction.type === "button_click" &&
+          interaction.type === "block_action" &&
           interaction.action_id === "enable_all_kinds"
         ) {
           const allSlugs = getAllSlugs();
@@ -1157,7 +1157,7 @@ export default {
         }
 
         if (
-          interaction.type === "button_click" &&
+          interaction.type === "block_action" &&
           interaction.action_id === "disable_all_kinds"
         ) {
           // Keep at least "note" enabled
@@ -1174,7 +1174,7 @@ export default {
 
         // Post Kinds — Set up the Kind field on Posts collection
         if (
-          interaction.type === "button_click" &&
+          interaction.type === "block_action" &&
           interaction.action_id === "setup_kind_field"
         ) {
           try {
@@ -1262,7 +1262,7 @@ export default {
 
         // Handle dynamic syndication target removal
         if (
-          interaction.type === "button_click" &&
+          interaction.type === "block_action" &&
           typeof interaction.action_id === "string" &&
           interaction.action_id.startsWith("remove_target_")
         ) {
@@ -1300,7 +1300,7 @@ export default {
 
         // Handle dynamic rel-me link removal
         if (
-          interaction.type === "button_click" &&
+          interaction.type === "block_action" &&
           typeof interaction.action_id === "string" &&
           interaction.action_id.startsWith("remove_relme_")
         ) {
@@ -1329,7 +1329,7 @@ export default {
 
         // Webmention actions
         if (
-          interaction.type === "button_click" &&
+          interaction.type === "block_action" &&
           typeof interaction.action_id === "string" &&
           interaction.action_id.startsWith("delete_wm_")
         ) {
@@ -1338,7 +1338,7 @@ export default {
         }
 
         if (
-          interaction.type === "button_click" &&
+          interaction.type === "block_action" &&
           typeof interaction.action_id === "string" &&
           interaction.action_id.startsWith("reverify_wm_")
         ) {

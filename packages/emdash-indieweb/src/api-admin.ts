@@ -52,22 +52,16 @@ const API_FIELDS = [
 ];
 
 export async function buildApiCredentialsPage(ctx: PluginContext) {
-  const fieldBlocks: Array<Record<string, unknown>> = [];
+  const formFields: Array<Record<string, unknown>> = [];
   for (const field of API_FIELDS) {
     const val = (await ctx.kv.get<string>(field.kvKey)) ?? "";
-    fieldBlocks.push(
-      {
-        type: "context" as const,
-        text: `[Get a ${field.label.replace(/ \(.*/, "")}](${field.docsUrl})`,
-      },
-      {
-        type: "secret_input" as const,
-        action_id: field.action_id,
-        label: field.label,
-        initial_value: val ? "configured" : "",
-        placeholder: field.placeholder,
-      },
-    );
+    formFields.push({
+      type: "secret_input" as const,
+      action_id: field.action_id,
+      label: field.label,
+      initial_value: val ? "configured" : "",
+      placeholder: field.placeholder,
+    });
   }
 
   return {
@@ -75,26 +69,37 @@ export async function buildApiCredentialsPage(ctx: PluginContext) {
       { type: "header", text: "API Connections" },
       {
         type: "context",
-        text: "Configure API keys for external media lookup services. Free APIs work without keys.",
+        text: "Configure API keys for external media lookup services. Free APIs (MusicBrainz, Open Library, Nominatim, BoardGameGeek) work without keys.",
       },
       { type: "divider" },
       {
-        type: "section",
-        text: "**Free APIs (no key needed)**",
+        type: "context",
+        text: "Get your API keys from these sites:",
       },
       {
-        type: "section",
-        text: "[MusicBrainz](https://musicbrainz.org/) (music) | [Open Library](https://openlibrary.org/developers/api) (books) | [Nominatim](https://nominatim.org/) (geocoding) | [BoardGameGeek](https://boardgamegeek.com/wiki/page/BGG_XML_API2) (board games)",
+        type: "fields",
+        fields: [
+          {
+            label: "TMDB (movies/TV)",
+            value: "developer.themoviedb.org/docs/getting-started",
+          },
+          { label: "RAWG (video games)", value: "rawg.io/apidocs" },
+          {
+            label: "Last.fm (music)",
+            value: "last.fm/api/account/create",
+          },
+          {
+            label: "Foursquare (venues)",
+            value: "location.foursquare.com/developer",
+          },
+          { label: "PodcastIndex", value: "api.podcastindex.org" },
+        ],
       },
       { type: "divider" },
-      {
-        type: "section",
-        text: "**APIs requiring a key**",
-      },
       {
         type: "form",
         block_id: "api-credentials",
-        fields: fieldBlocks,
+        fields: formFields,
         submit: {
           label: "Save API Keys",
           action_id: "save_api_credentials",
