@@ -1190,11 +1190,6 @@ export default {
                 "bookmark",
               ];
 
-          const kindOptions = enabledKinds.map((slug) => ({
-            label: getPostKind(slug)?.name ?? slug,
-            value: slug,
-          }));
-
           return {
             blocks: [
               { type: "header", text: "Set up Kind field on Posts" },
@@ -1229,17 +1224,15 @@ export default {
               },
               {
                 type: "section",
-                text: "Step 5: Add these select options (use the value as both label and value):",
+                text: "Step 5: In the Options box, paste the following values (one per line):",
               },
               {
-                type: "table",
-                columns: [
-                  { key: "label", label: "Label" },
-                  { key: "value", label: "Value" },
-                ],
-                rows: kindOptions,
-                pageActionId: "kind_options_page",
-                emptyText: "No kinds enabled",
+                type: "section",
+                text: enabledKinds.join("\n"),
+              },
+              {
+                type: "context",
+                text: "Copy the list above and paste it into the Options field. Each line becomes one dropdown choice.",
               },
               {
                 type: "section",
