@@ -353,15 +353,17 @@ async function buildPostKindsPage(ctx: PluginContext) {
       { type: "divider" },
       {
         type: "banner",
-        text: 'Post Kinds need a "Kind" field on your Posts collection to work. Click below to set it up.',
-        style: "info",
+        title: "Kind field not set up",
+        description:
+          'Post Kinds need a "Kind" field on your Posts collection to work. Click below to set it up.',
+        variant: "alert",
       },
       {
         type: "actions",
         elements: [
           {
             type: "button",
-            text: "Set up Kind field on Posts",
+            label: "Set up Kind field on Posts",
             action_id: "setup_kind_field",
             style: "primary",
           },
@@ -392,13 +394,14 @@ async function buildPostKindsPage(ctx: PluginContext) {
         elements: [
           {
             type: "button",
-            text: "Enable All",
+            label: "Enable All",
             action_id: "enable_all_kinds",
           },
           {
             type: "button",
-            text: "Disable All",
+            label: "Disable All",
             action_id: "disable_all_kinds",
+            style: "secondary",
           },
         ],
       },
@@ -438,8 +441,8 @@ async function savePostKinds(
       blocks: [
         {
           type: "banner",
-          text: "At least one post kind must be enabled",
-          style: "error",
+          title: "At least one post kind must be enabled",
+          variant: "error",
         },
       ],
     };
