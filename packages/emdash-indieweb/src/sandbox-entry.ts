@@ -353,10 +353,10 @@ async function buildPostKindsPage(ctx: PluginContext) {
       { type: "divider" },
       {
         type: "banner",
-        title: "Kind field not set up",
+        title: "Optional: add a Kind dropdown to the post editor",
         description:
-          'Post Kinds need a "Kind" field on your Posts collection to work. Click below to set it up.',
-        variant: "alert",
+          "Post kinds are auto-detected from content, but you can also manually choose a kind per post. Click below for setup steps.",
+        variant: "default",
       },
       {
         type: "actions",
@@ -1172,67 +1172,119 @@ export default {
           };
         }
 
-        // Post Kinds — Set up the Kind field on Posts collection
+        // Post Kinds — Show setup instructions
         if (
           interaction.type === "block_action" &&
           interaction.action_id === "setup_kind_field"
         ) {
-          try {
-            const enabledRaw = await ctx.kv.get<string>(
-              "settings:enabledKinds",
-            );
-            const enabledKinds: string[] = enabledRaw
-              ? JSON.parse(enabledRaw)
-              : [
-                  "note",
-                  "article",
-                  "photo",
-                  "reply",
-                  "like",
-                  "repost",
-                  "bookmark",
-                ];
+          const enabledRaw = await ctx.kv.get<string>("settings:enabledKinds");
+          const enabledKinds: string[] = enabledRaw
+            ? JSON.parse(enabledRaw)
+            : [
+                "note",
+                "article",
+                "photo",
+                "reply",
+                "like",
+                "repost",
+                "bookmark",
+              ];
 
-            const options = enabledKinds.map((slug) => ({
-              label: getPostKind(slug)?.name ?? slug,
-              value: slug,
-            }));
+          const kindOptions = enabledKinds.map((slug) => ({
+            label: getPostKind(slug)?.name ?? slug,
+            value: slug,
+          }));
 
-            await ctx.http!.fetch(
-              `${ctx.site.url.replace(/\/$/, "")}/_emdash/api/schema/collections/posts/fields`,
+          return {
+            blocks: [
+              { type: "header", text: "Set up Kind field on Posts" },
               {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  slug: "kind",
-                  label: "Kind",
-                  type: "select",
-                  required: false,
-                  options,
-                  sortOrder: 5,
-                }),
+                type: "context",
+                text: "This adds a Kind dropdown to your post editor so you can choose what type of post you're creating (article, note, bookmark, reply, etc.).",
               },
-            );
+              { type: "divider" },
+              {
+                type: "banner",
+                title: "Note: auto-detection already works",
+                description:
+                  "The plugin auto-detects post kinds from content (replies, likes, bookmarks, etc.) even without this field. This setup is only needed if you want to manually pick a kind in the editor.",
+                variant: "default",
+              },
+              { type: "divider" },
+              {
+                type: "section",
+                text: "Step 1: Open Content Types > Posts in the left sidebar under Admin.",
+              },
+              {
+                type: "section",
+                text: "Step 2: Click the + Add Field button on the right side (Fields panel).",
+              },
+              {
+                type: "section",
+                text: 'Step 3: Choose "Select" (Single choice from options).',
+              },
+              {
+                type: "section",
+                text: 'Step 4: Set the Label to "Kind" and the Slug to "kind".',
+              },
+              {
+                type: "section",
+                text: "Step 5: Add these select options (use the value as both label and value):",
+              },
+              {
+                type: "table",
+                columns: [
+                  { key: "label", label: "Label" },
+                  { key: "value", label: "Value" },
+                ],
+                rows: kindOptions,
+                pageActionId: "kind_options_page",
+                emptyText: "No kinds enabled",
+              },
+              {
+                type: "section",
+                text: "Step 6: Save the field. You'll now see a Kind dropdown when editing posts.",
+              },
+              { type: "divider" },
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    label: "Done — I added the field",
+                    action_id: "confirm_kind_field_setup",
+                    style: "primary",
+                  },
+                  {
+                    type: "button",
+                    label: "Back to Post Kinds",
+                    action_id: "back_to_post_kinds",
+                  },
+                ],
+              },
+            ],
+          };
+        }
 
-            await ctx.kv.set("settings:kindFieldCreated", "true");
+        if (
+          interaction.type === "block_action" &&
+          interaction.action_id === "confirm_kind_field_setup"
+        ) {
+          await ctx.kv.set("settings:kindFieldCreated", "true");
+          return {
+            ...(await buildPostKindsPage(ctx)),
+            toast: {
+              message: "Kind field marked as set up",
+              type: "success" as const,
+            },
+          };
+        }
 
-            return {
-              ...(await buildPostKindsPage(ctx)),
-              toast: {
-                message:
-                  'Kind field added to Posts — you\'ll see a "Kind" dropdown in the editor',
-                type: "success" as const,
-              },
-            };
-          } catch (err) {
-            return {
-              ...(await buildPostKindsPage(ctx)),
-              toast: {
-                message: `Failed to create field: ${err instanceof Error ? err.message : String(err)}`,
-                type: "error" as const,
-              },
-            };
-          }
+        if (
+          interaction.type === "block_action" &&
+          interaction.action_id === "back_to_post_kinds"
+        ) {
+          return buildPostKindsPage(ctx);
         }
 
         // Syndication (POSSE)
