@@ -1194,49 +1194,28 @@ export default {
             blocks: [
               { type: "header", text: "Set up Kind field on Posts" },
               {
-                type: "context",
-                text: "This adds a Kind dropdown to your post editor so you can choose what type of post you're creating (article, note, bookmark, reply, etc.).",
-              },
-              { type: "divider" },
-              {
                 type: "banner",
-                title: "Note: auto-detection already works",
+                title: "Optional — auto-detection already works",
                 description:
-                  "The plugin auto-detects post kinds from content (replies, likes, bookmarks, etc.) even without this field. This setup is only needed if you want to manually pick a kind in the editor.",
+                  "The plugin auto-detects post kinds from content properties. This field is only needed if you want to manually pick a kind in the editor.",
                 variant: "default",
               },
               { type: "divider" },
               {
                 type: "section",
-                text: "Step 1: Open Content Types > Posts in the left sidebar under Admin.",
+                text: 'Go to Content Types > Posts, click "+ Add Field", choose "Select", set Label to "Kind" and Slug to "kind".',
               },
               {
                 type: "section",
-                text: "Step 2: Click the + Add Field button on the right side (Fields panel).",
+                text: "Copy and paste these options into the Options box:",
               },
               {
-                type: "section",
-                text: 'Step 3: Choose "Select" (Single choice from options).',
-              },
-              {
-                type: "section",
-                text: 'Step 4: Set the Label to "Kind" and the Slug to "kind".',
-              },
-              {
-                type: "section",
-                text: "Step 5: In the Options box, paste the following values (one per line):",
-              },
-              {
-                type: "section",
-                text: enabledKinds.join("\n"),
+                type: "code",
+                code: enabledKinds.join("\n"),
               },
               {
                 type: "context",
-                text: "Copy the list above and paste it into the Options field. Each line becomes one dropdown choice.",
-              },
-              {
-                type: "section",
-                text: "Step 6: Save the field. You'll now see a Kind dropdown when editing posts.",
+                text: "Select all the text in the box above, copy it, and paste it into the Options field. One kind per line. Then save.",
               },
               { type: "divider" },
               {
@@ -1244,13 +1223,13 @@ export default {
                 elements: [
                   {
                     type: "button",
-                    label: "Done — I added the field",
+                    label: "Done",
                     action_id: "confirm_kind_field_setup",
                     style: "primary",
                   },
                   {
                     type: "button",
-                    label: "Back to Post Kinds",
+                    label: "Back",
                     action_id: "back_to_post_kinds",
                   },
                 ],
