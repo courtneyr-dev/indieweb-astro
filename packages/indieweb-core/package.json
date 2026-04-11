@@ -4,20 +4,48 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.ts",
-    "./mf2": "./src/mf2/index.ts",
-    "./kinds": "./src/kinds/index.ts",
-    "./xfn": "./src/xfn/index.ts",
-    "./webmention": "./src/webmention/index.ts",
-    "./indieauth": "./src/indieauth/index.ts",
-    "./micropub": "./src/micropub/index.ts",
-    "./posse": "./src/posse/index.ts"
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.mts"
+    },
+    "./mf2": {
+      "import": "./dist/mf2/index.mjs",
+      "types": "./dist/mf2/index.d.mts"
+    },
+    "./kinds": {
+      "import": "./dist/kinds/index.mjs",
+      "types": "./dist/kinds/index.d.mts"
+    },
+    "./xfn": {
+      "import": "./dist/xfn/index.mjs",
+      "types": "./dist/xfn/index.d.mts"
+    },
+    "./webmention": {
+      "import": "./dist/webmention/index.mjs",
+      "types": "./dist/webmention/index.d.mts"
+    },
+    "./indieauth": {
+      "import": "./dist/indieauth/index.mjs",
+      "types": "./dist/indieauth/index.d.mts"
+    },
+    "./micropub": {
+      "import": "./dist/micropub/index.mjs",
+      "types": "./dist/micropub/index.d.mts"
+    },
+    "./posse": {
+      "import": "./dist/posse/index.mjs",
+      "types": "./dist/posse/index.d.mts"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsdown src/index.ts src/mf2/index.ts src/kinds/index.ts src/xfn/index.ts src/webmention/index.ts src/indieauth/index.ts src/micropub/index.ts src/posse/index.ts --format esm --dts --clean",
     "test": "vitest run"
   },
   "devDependencies": {
+    "tsdown": "^0.21.7",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

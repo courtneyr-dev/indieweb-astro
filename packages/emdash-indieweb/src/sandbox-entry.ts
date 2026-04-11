@@ -13,7 +13,6 @@
  *
  * @see https://www.w3.org/TR/webmention/
  */
-import { definePlugin } from "emdash";
 import type { PluginContext, ContentHookEvent } from "emdash";
 import {
   validateWebmention,
@@ -277,10 +276,10 @@ async function buildPostKindsPage(ctx: PluginContext) {
     (await ctx.kv.get<string>("settings:defaultKind")) ?? "note";
 
   const allSlugs = getAllSlugs();
-  const kindCheckboxes = allSlugs.map((slug) => {
+  const kindToggles = allSlugs.map((slug) => {
     const kind = getPostKind(slug);
     return {
-      type: "checkbox" as const,
+      type: "toggle" as const,
       action_id: `kind_${slug}`,
       label: kind?.name ?? slug,
       initial_value: enabledKinds.includes(slug),
@@ -311,7 +310,7 @@ async function buildPostKindsPage(ctx: PluginContext) {
             options: kindOptions,
             initial_value: defaultKind,
           },
-          ...kindCheckboxes,
+          ...kindToggles,
         ],
         submit: { label: "Save Post Kinds", action_id: "save_post_kinds" },
       },
@@ -549,6 +548,11 @@ async function buildRelationshipsPage(ctx: PluginContext) {
     ? JSON.parse(linksRaw)
     : [];
 
+  const xfnRaw = await ctx.kv.get<string>("settings:xfnDefaults");
+  const xfnDefaults: Record<string, string[]> = xfnRaw
+    ? JSON.parse(xfnRaw)
+    : {};
+
   const linkBlocks = links.map((link, index) => ({
     type: "section" as const,
     text: `**${link.label || link.url}**\n\`rel="me"\` — ${link.url}`,
@@ -560,17 +564,52 @@ async function buildRelationshipsPage(ctx: PluginContext) {
     },
   }));
 
-  const categoryBlocks = XFN_CATEGORIES.map((cat) => ({
-    type: "section" as const,
-    text: `**${cat.label}** (${cat.selectionType === "radio" ? "pick one" : "pick any"})\n${cat.values.map((v) => v.label).join(", ")}`,
-  }));
+  // Build XFN relationship fields grouped by category
+  const xfnFields: Array<{
+    type: "toggle" | "select";
+    action_id: string;
+    label: string;
+    initial_value?: boolean | string;
+    options?: Array<{ label: string; value: string }>;
+  }> = [];
+
+  for (const cat of XFN_CATEGORIES) {
+    const selectedValues = xfnDefaults[cat.slug] || [];
+
+    if (cat.selectionType === "radio") {
+      // Radio categories: use a select dropdown (pick one)
+      xfnFields.push({
+        type: "select",
+        action_id: `xfn_${cat.slug}`,
+        label: `${cat.label} (pick one)`,
+        options: [
+          { label: "None", value: "" },
+          ...cat.values.map((v) => ({
+            label: `${v.label} — ${v.description}`,
+            value: v.value,
+          })),
+        ],
+        initial_value: selectedValues[0] || "",
+      });
+    } else {
+      // Checkbox categories: use toggles (pick any)
+      for (const v of cat.values) {
+        xfnFields.push({
+          type: "toggle",
+          action_id: `xfn_${cat.slug}_${v.value}`,
+          label: `${cat.label}: ${v.label} — ${v.description}`,
+          initial_value: selectedValues.includes(v.value),
+        });
+      }
+    }
+  }
 
   return {
     blocks: [
       { type: "header", text: "Relationships (XFN)" },
       {
         type: "context",
-        text: 'Manage your rel="me" identity links and XFN relationship vocabulary. These links help verify your identity across the web.',
+        text: 'Manage your rel="me" identity links and XFN relationship settings. Identity links verify who you are across the web. XFN defines how you relate to people you link to.',
       },
       { type: "divider" },
       { type: "header", text: "Identity Links (rel=me)" },
@@ -603,12 +642,17 @@ async function buildRelationshipsPage(ctx: PluginContext) {
         submit: { label: "Add Link", action_id: "add_relme_link" },
       },
       { type: "divider" },
-      { type: "header", text: "XFN Vocabulary Reference" },
+      { type: "header", text: "XFN Relationship Defaults" },
       {
         type: "context",
-        text: "XFN (XHTML Friends Network) relationship types available for links in your content.",
+        text: "Set default XFN relationship types applied to outgoing links. These follow the XFN 1.1 spec (gmpg.org/xfn/).",
       },
-      ...categoryBlocks,
+      {
+        type: "form",
+        block_id: "xfn-settings",
+        fields: xfnFields,
+        submit: { label: "Save XFN Settings", action_id: "save_xfn_settings" },
+      },
     ],
   };
 }
@@ -656,6 +700,35 @@ async function removeRelMeLink(ctx: PluginContext, index: number) {
   };
 }
 
+async function saveXfnSettings(
+  ctx: PluginContext,
+  values: Record<string, unknown>,
+) {
+  const xfnDefaults: Record<string, string[]> = {};
+
+  for (const cat of XFN_CATEGORIES) {
+    if (cat.selectionType === "radio") {
+      const val = values[`xfn_${cat.slug}`] as string;
+      if (val) xfnDefaults[cat.slug] = [val];
+    } else {
+      const selected: string[] = [];
+      for (const v of cat.values) {
+        if (values[`xfn_${cat.slug}_${v.value}`] === true) {
+          selected.push(v.value);
+        }
+      }
+      if (selected.length > 0) xfnDefaults[cat.slug] = selected;
+    }
+  }
+
+  await ctx.kv.set("settings:xfnDefaults", JSON.stringify(xfnDefaults));
+
+  return {
+    ...(await buildRelationshipsPage(ctx)),
+    toast: { message: "XFN settings saved", type: "success" as const },
+  };
+}
+
 // ─── Enhanced Webmention Page ───────────────────────────────────────────
 
 async function deleteWebmention(ctx: PluginContext, wmId: string) {
@@ -686,7 +759,7 @@ async function reverifyWebmention(
 
 // ─── Plugin Definition ───────────────────────────────────────────────────
 
-export default definePlugin({
+export default {
   hooks: {
     "content:beforeSave": {
       priority: 100,
@@ -936,6 +1009,15 @@ export default definePlugin({
             (interaction.values as Record<string, unknown>) ?? {},
           );
 
+        if (
+          interaction.type === "form_submit" &&
+          interaction.action_id === "save_xfn_settings"
+        )
+          return saveXfnSettings(
+            ctx,
+            (interaction.values as Record<string, unknown>) ?? {},
+          );
+
         // Handle dynamic rel-me link removal
         if (
           interaction.type === "button_click" &&
@@ -1044,7 +1126,7 @@ export default definePlugin({
       },
     },
   },
-});
+};
 
 // ─── Background Verification ─────────────────────────────────────────────
 
