@@ -115,7 +115,7 @@ async function buildWebmentionDashboardWidget(ctx: PluginContext) {
     blocks: [
       {
         type: "stats",
-        stats: [
+        items: [
           { label: "Total", value: String(total) },
           { label: "Verified", value: String(verified) },
           { label: "Pending", value: String(pending) },
