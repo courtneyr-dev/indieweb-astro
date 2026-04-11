@@ -1,0 +1,84 @@
+---
+/**
+ * Jam template — "now playing" music share.
+ *
+ * Similar to listen but with a "Now Playing" emphasis.
+ *
+ * @example
+ * ```astro
+ * <KindJam
+ *   jamTrack="Cruel Summer"
+ *   jamArtist="Taylor Swift"
+ *   jamAlbum="Lover"
+ * />
+ * ```
+ */
+interface Props {
+  jamTrack: string;
+  jamArtist?: string;
+  jamAlbum?: string;
+  jamCover?: string;
+  jamUrl?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  jamTrack, jamArtist, jamAlbum, jamCover, jamUrl,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-jam", className]}>
+  <div class="pk-media-card h-cite">
+    {jamCover && (
+      <div class="pk-media-card__image">
+        <img class="u-photo" src={jamCover} alt={`${jamAlbum || jamTrack} cover`} loading="lazy" />
+      </div>
+    )}
+
+    <div class="pk-media-card__info">
+      <span class="pk-badge pk-badge--jam">Now Playing</span>
+
+      <h3 class="pk-media-card__title p-name">
+        {jamUrl
+          ? <a class="u-url u-jam-of" href={jamUrl}>{jamTrack}</a>
+          : jamTrack}
+      </h3>
+
+      {jamArtist && (
+        <p class="pk-media-card__subtitle p-author h-card">
+          <span class="p-name">{jamArtist}</span>
+        </p>
+      )}
+
+      {jamAlbum && <p class="pk-media-card__meta">{jamAlbum}</p>}
+
+      {content && <p class="pk-media-card__notes p-content">{content}</p>}
+
+      {published && (
+        <time class="pk-media-card__timestamp dt-published" datetime={published}>
+          {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </time>
+      )}
+    </div>
+  </div>
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

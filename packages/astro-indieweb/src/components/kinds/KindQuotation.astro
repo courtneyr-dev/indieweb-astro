@@ -1,0 +1,83 @@
+---
+/**
+ * Quotation template — quoting another post.
+ *
+ * @example
+ * ```astro
+ * <KindQuotation
+ *   quotationOf="https://example.com/post/789"
+ *   citationName="Original Post"
+ *   citationAuthor="Jane Doe"
+ *   content="<p>The web is for everyone.</p>"
+ * />
+ * ```
+ */
+interface Props {
+  quotationOf: string;
+  content?: string;
+  name?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  citationName?: string;
+  citationAuthor?: string;
+  citationAuthorUrl?: string;
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  quotationOf, content, name, published, url, author,
+  citationName, citationAuthor, citationAuthorUrl,
+  category, syndication, class: className,
+} = Astro.props;
+
+const displayUrl = (() => {
+  try { return new URL(quotationOf).hostname; } catch { return quotationOf; }
+})();
+---
+
+<article class:list={["h-entry pk-quotation", className]}>
+  {name && <h1 class="p-name">{name}</h1>}
+
+  <blockquote class="pk-quotation__quote">
+    {content ? (
+      <div class="e-content" set:html={content} />
+    ) : (
+      <div class="e-content"><slot /></div>
+    )}
+    <footer>
+      <cite>
+        <a class="u-quotation-of u-url" href={quotationOf}>
+          <span class="p-name">{citationName || displayUrl}</span>
+        </a>
+        {citationAuthor && (
+          <span class="pk-citation__author">
+            — {citationAuthorUrl
+              ? <a class="p-author h-card" href={citationAuthorUrl}>{citationAuthor}</a>
+              : <span class="p-author h-card">{citationAuthor}</span>}
+          </span>
+        )}
+      </cite>
+    </footer>
+  </blockquote>
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

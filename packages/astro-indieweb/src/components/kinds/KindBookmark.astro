@@ -1,0 +1,87 @@
+---
+/**
+ * Bookmark template — saving a link for later.
+ *
+ * @example
+ * ```astro
+ * <KindBookmark
+ *   bookmarkOf="https://example.com/article"
+ *   name="Great Resource"
+ *   citationName="How to Build for the IndieWeb"
+ *   citationAuthor="Jane Doe"
+ *   content="<p>Adding this to my reading list.</p>"
+ *   published="2026-04-11T10:00:00Z"
+ * />
+ * ```
+ */
+interface Props {
+  bookmarkOf: string;
+  name?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  citationName?: string;
+  citationAuthor?: string;
+  citationAuthorUrl?: string;
+  citationPhoto?: string;
+  citationSummary?: string;
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  bookmarkOf, name, content, published, url, author,
+  citationName, citationAuthor, citationAuthorUrl, citationPhoto, citationSummary,
+  category, syndication, class: className,
+} = Astro.props;
+
+const displayUrl = (() => {
+  try { return new URL(bookmarkOf).hostname; } catch { return bookmarkOf; }
+})();
+---
+
+<article class:list={["h-entry pk-bookmark", className]}>
+  {name && <h1 class="p-name">{name}</h1>}
+
+  <div class="pk-citation">
+    <span class="pk-citation__label">Bookmarked</span>
+    <div class="pk-citation__target h-cite">
+      {citationPhoto && <img class="u-photo" src={citationPhoto} alt="" width="48" height="48" />}
+      <div>
+        <a class="u-bookmark-of u-url" href={bookmarkOf}>
+          <span class="p-name">{citationName || displayUrl}</span>
+        </a>
+        {citationAuthor && (
+          <span class="pk-citation__author">
+            by {citationAuthorUrl
+              ? <a class="p-author h-card" href={citationAuthorUrl}>{citationAuthor}</a>
+              : <span class="p-author h-card">{citationAuthor}</span>}
+          </span>
+        )}
+        {citationSummary && <p class="p-summary">{citationSummary}</p>}
+      </div>
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

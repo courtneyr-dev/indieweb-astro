@@ -1,0 +1,71 @@
+---
+/**
+ * Wish template — wishlist item.
+ *
+ * @example
+ * ```astro
+ * <KindWish
+ *   wishName="Steam Deck OLED"
+ *   wishUrl="https://store.steampowered.com/steamdeck"
+ *   wishType="gadget"
+ *   wishPriority="high"
+ * />
+ * ```
+ */
+interface Props {
+  wishName: string;
+  wishUrl?: string;
+  wishPhoto?: string;
+  wishType?: string;
+  wishPriority?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  wishName, wishUrl, wishPhoto, wishType, wishPriority,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-wish", className]}>
+  <div class="pk-lifelog-card">
+    {wishPhoto && <img class="u-photo pk-lifelog-card__photo" src={wishPhoto} alt={wishName} loading="lazy" />}
+
+    <div class="pk-lifelog-card__info">
+      {wishType && <span class="pk-badge">{wishType}</span>}
+      {wishPriority && <span class:list={["pk-badge", `pk-badge--priority-${wishPriority}`]}>{wishPriority} priority</span>}
+
+      <h3 class="pk-lifelog-card__title p-name">
+        {wishUrl
+          ? <a class="u-url" href={wishUrl}>{wishName}</a>
+          : wishName}
+      </h3>
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

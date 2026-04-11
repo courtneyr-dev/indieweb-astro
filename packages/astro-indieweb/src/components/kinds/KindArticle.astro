@@ -1,0 +1,85 @@
+---
+/**
+ * Article template — long-form content with title and optional summary.
+ *
+ * @example
+ * ```astro
+ * <KindArticle
+ *   name="My IndieWeb Journey"
+ *   summary="How I set up my own website."
+ *   content="<p>It all started when...</p>"
+ *   published="2026-04-11T10:00:00Z"
+ *   url="/posts/indieweb-journey"
+ * />
+ * ```
+ */
+interface Props {
+  name?: string;
+  summary?: string;
+  content?: string;
+  published?: string;
+  updated?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  photo?: string | string[];
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  name,
+  summary,
+  content,
+  published,
+  updated,
+  url,
+  author,
+  photo,
+  category,
+  syndication,
+  class: className,
+} = Astro.props;
+
+const photos = photo ? (Array.isArray(photo) ? photo : [photo]) : [];
+---
+
+<article class:list={["h-entry pk-article", className]}>
+  {name && <h1 class="p-name">{name}</h1>}
+
+  <div class="pk-article__byline">
+    {author && (
+      <span class="p-author h-card">
+        {author.photo && <img class="u-photo" src={author.photo} alt="" width="32" height="32" />}
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {updated && (
+      <time class="dt-updated" datetime={updated}>
+        (updated {new Date(updated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
+      </time>
+    )}
+  </div>
+
+  {summary && <p class="p-summary">{summary}</p>}
+  {photos.map((src) => <img class="u-photo" src={src} alt="" />)}
+
+  {content ? (
+    <div class="e-content" set:html={content} />
+  ) : (
+    <div class="e-content"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <a class="p-category" href={`/tags/${tag}`}>{tag}</a>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

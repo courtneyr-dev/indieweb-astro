@@ -1,0 +1,67 @@
+---
+/**
+ * Tag Reply template — tagging another post.
+ *
+ * @example
+ * ```astro
+ * <KindTagReply
+ *   tagOf="https://example.com/post/123"
+ *   inReplyTo="https://example.com/post/123"
+ *   summary="Tagged as #indieweb"
+ * />
+ * ```
+ */
+interface Props {
+  tagOf: string;
+  inReplyTo: string;
+  summary?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  citationName?: string;
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  tagOf, inReplyTo, summary, published, url, author,
+  citationName, category, syndication, class: className,
+} = Astro.props;
+
+const displayUrl = (() => {
+  try { return new URL(tagOf).hostname; } catch { return tagOf; }
+})();
+---
+
+<article class:list={["h-entry pk-tag-reply", className]}>
+  <div class="pk-citation">
+    <span class="pk-citation__label">Tagged</span>
+    <div class="pk-citation__target h-cite">
+      <a class="u-tag-of u-url" href={tagOf}>
+        <span class="p-name">{citationName || displayUrl}</span>
+      </a>
+    </div>
+    <a class="u-in-reply-to" href={inReplyTo} hidden>{inReplyTo}</a>
+  </div>
+
+  {summary && <p class="p-summary">{summary}</p>}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

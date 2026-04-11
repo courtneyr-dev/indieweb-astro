@@ -1,0 +1,30 @@
+---
+/**
+ * Star rating display.
+ *
+ * Renders a numeric rating as filled/empty star characters
+ * with proper mf2 `p-rating` markup.
+ *
+ * @example
+ * ```astro
+ * <Rating value={4} best={5} />
+ * ```
+ */
+interface Props {
+  value: number;
+  best?: number;
+  class?: string;
+}
+
+const { value, best = 5, class: className } = Astro.props;
+const filled = Math.round(Math.min(value, best));
+const empty = best - filled;
+---
+
+<span class:list={["pk-rating", className]}>
+  <data class="p-rating" value={String(value)}>
+    {Array(filled).fill(null).map(() => <span aria-hidden="true">&#9733;</span>)}
+    {Array(empty).fill(null).map(() => <span aria-hidden="true">&#9734;</span>)}
+  </data>
+  <span class="sr-only">{value} out of {best}</span>
+</span>

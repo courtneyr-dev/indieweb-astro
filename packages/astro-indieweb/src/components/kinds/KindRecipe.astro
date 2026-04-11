@@ -1,0 +1,94 @@
+---
+/**
+ * Recipe template — uses h-recipe root class.
+ *
+ * @example
+ * ```astro
+ * <KindRecipe
+ *   name="Chocolate Chip Cookies"
+ *   recipeIngredient={["2 cups flour", "1 cup sugar", "1 cup chocolate chips"]}
+ *   recipeYield="24 cookies"
+ *   recipeDuration="45 minutes"
+ *   photo="/images/cookies.jpg"
+ * />
+ * ```
+ */
+interface Props {
+  name: string;
+  summary?: string;
+  content?: string;
+  photo?: string | string[];
+  recipeIngredient?: string[];
+  recipeYield?: string;
+  recipeDuration?: string;
+  recipeNutrition?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  name, summary, content, photo, recipeIngredient, recipeYield, recipeDuration, recipeNutrition,
+  published, url, author, category, syndication, class: className,
+} = Astro.props;
+
+const photos = photo ? (Array.isArray(photo) ? photo : [photo]) : [];
+---
+
+<article class:list={["h-recipe pk-recipe", className]}>
+  <h1 class="p-name">{name}</h1>
+
+  {summary && <p class="p-summary">{summary}</p>}
+
+  {photos.map((src) => <img class="u-photo" src={src} alt={name} loading="lazy" />)}
+
+  <div class="pk-recipe__details">
+    {recipeYield && <span class="pk-recipe__yield">Yield: <span class="p-yield">{recipeYield}</span></span>}
+    {recipeDuration && <span class="pk-recipe__duration">Time: <time class="dt-duration" datetime={recipeDuration}>{recipeDuration}</time></span>}
+    {recipeNutrition && <span class="pk-recipe__nutrition p-nutrition">{recipeNutrition}</span>}
+  </div>
+
+  {recipeIngredient && recipeIngredient.length > 0 && (
+    <div class="pk-recipe__ingredients">
+      <h2>Ingredients</h2>
+      <ul>
+        {recipeIngredient.map((ing) => (
+          <li class="p-ingredient">{ing}</li>
+        ))}
+      </ul>
+    </div>
+  )}
+
+  {content ? (
+    <div class="pk-recipe__instructions">
+      <h2>Instructions</h2>
+      <div class="e-instructions" set:html={content} />
+    </div>
+  ) : (
+    <div class="pk-recipe__instructions">
+      <h2>Instructions</h2>
+      <div class="e-instructions"><slot /></div>
+    </div>
+  )}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

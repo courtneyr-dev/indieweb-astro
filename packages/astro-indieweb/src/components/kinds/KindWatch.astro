@@ -1,0 +1,134 @@
+---
+/**
+ * Watch template — movie/TV scrobble.
+ *
+ * Two-column card: poster + movie/show metadata with status badge.
+ * Follows the WordPress Post Kinds watch-card pattern.
+ *
+ * @example
+ * ```astro
+ * <KindWatch
+ *   watchTitle="The Matrix"
+ *   watchYear="1999"
+ *   watchMediaType="movie"
+ *   watchDirector="Wachowski Sisters"
+ *   watchPoster="/images/matrix.jpg"
+ *   watchStatus="watched"
+ *   watchRating={5}
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+import StatusBadge from './StatusBadge.astro';
+
+interface Props {
+  watchTitle: string;
+  watchYear?: string;
+  watchPoster?: string;
+  watchTmdbId?: string;
+  watchImdbId?: string;
+  watchStatus?: string;
+  watchRating?: number;
+  watchReview?: string;
+  watchMediaType?: string;
+  watchDirector?: string;
+  watchSeason?: string;
+  watchEpisode?: string;
+  watchEpisodeTitle?: string;
+  watchUrl?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  watchTitle, watchYear, watchPoster, watchTmdbId, watchImdbId,
+  watchStatus, watchRating, watchReview, watchMediaType,
+  watchDirector, watchSeason, watchEpisode, watchEpisodeTitle, watchUrl,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+
+const tmdbUrl = watchTmdbId ? `https://www.themoviedb.org/${watchMediaType === 'tv' ? 'tv' : 'movie'}/${watchTmdbId}` : null;
+const imdbUrl = watchImdbId ? `https://www.imdb.com/title/${watchImdbId}` : null;
+const displayUrl = watchUrl || tmdbUrl || imdbUrl;
+---
+
+<article class:list={["h-entry pk-watch", `pk-watch--${watchMediaType || 'movie'}`, className]}>
+  <div class="pk-media-card h-cite">
+    {watchPoster && (
+      <div class="pk-media-card__image pk-media-card__image--portrait">
+        <img class="u-photo" src={watchPoster} alt={`${watchTitle} poster`} loading="lazy" />
+      </div>
+    )}
+
+    <div class="pk-media-card__info">
+      {watchMediaType && (
+        <span class:list={["pk-badge", `pk-badge--${watchMediaType}`]}>
+          {watchMediaType === 'tv' ? 'TV' : watchMediaType === 'movie' ? 'Movie' : watchMediaType}
+        </span>
+      )}
+      {watchStatus && <StatusBadge status={watchStatus} />}
+
+      <h3 class="pk-media-card__title p-name">
+        {displayUrl
+          ? <a class="u-url" href={displayUrl}>{watchTitle}</a>
+          : watchTitle}
+      </h3>
+
+      {watchSeason && watchEpisode && (
+        <p class="pk-media-card__subtitle">
+          S{watchSeason}E{watchEpisode}{watchEpisodeTitle ? ` — ${watchEpisodeTitle}` : ''}
+        </p>
+      )}
+
+      <p class="pk-media-card__meta">
+        {watchYear && <span>({watchYear})</span>}
+        {watchDirector && (
+          <span>
+            {watchYear ? ' · ' : ''}
+            <span class="p-author h-card"><span class="p-name">{watchDirector}</span></span>
+          </span>
+        )}
+      </p>
+
+      {watchRating != null && <Rating value={watchRating} />}
+
+      {watchReview && <p class="pk-media-card__notes p-content">{watchReview}</p>}
+
+      {published && (
+        <time class="pk-media-card__timestamp dt-published" datetime={published}>
+          {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </time>
+      )}
+
+      {(imdbUrl || tmdbUrl) && (
+        <div class="pk-media-card__links">
+          {imdbUrl && <a href={imdbUrl} rel="noopener">IMDb</a>}
+          {tmdbUrl && <a href={tmdbUrl} rel="noopener">TMDB</a>}
+        </div>
+      )}
+    </div>
+
+    {displayUrl && <data class="u-watch-of" value={displayUrl} hidden />}
+    {tmdbUrl && <data class="u-uid" value={tmdbUrl} hidden />}
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

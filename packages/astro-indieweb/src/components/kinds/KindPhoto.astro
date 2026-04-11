@@ -1,0 +1,64 @@
+---
+/**
+ * Photo template — image-first post.
+ *
+ * @example
+ * ```astro
+ * <KindPhoto
+ *   photo="/images/sunset.jpg"
+ *   content="<p>Golden hour at the beach.</p>"
+ *   published="2026-04-11T18:30:00Z"
+ * />
+ * ```
+ */
+interface Props {
+  photo: string | string[];
+  content?: string;
+  name?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const { photo, content, name, published, url, author, category, syndication, class: className } = Astro.props;
+const photos = Array.isArray(photo) ? photo : [photo];
+---
+
+<article class:list={["h-entry pk-photo", className]}>
+  {name && <h1 class="p-name">{name}</h1>}
+
+  <div class="pk-photo__gallery">
+    {photos.map((src) => (
+      <figure>
+        <img class="u-photo" src={src} alt="" loading="lazy" />
+      </figure>
+    ))}
+  </div>
+
+  {content ? (
+    <div class="e-content" set:html={content} />
+  ) : (
+    <div class="e-content"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

@@ -1,0 +1,64 @@
+---
+/**
+ * Audio template — audio-first post.
+ *
+ * @example
+ * ```astro
+ * <KindAudio
+ *   audio="/media/podcast-ep1.mp3"
+ *   name="Episode 1: Getting Started"
+ *   published="2026-04-11T08:00:00Z"
+ * />
+ * ```
+ */
+interface Props {
+  audio: string | string[];
+  content?: string;
+  name?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const { audio, content, name, published, url, author, category, syndication, class: className } = Astro.props;
+const tracks = Array.isArray(audio) ? audio : [audio];
+---
+
+<article class:list={["h-entry pk-audio", className]}>
+  {name && <h1 class="p-name">{name}</h1>}
+
+  <div class="pk-audio__player">
+    {tracks.map((src) => (
+      <audio class="u-audio" src={src} controls preload="metadata">
+        <a href={src}>Download audio</a>
+      </audio>
+    ))}
+  </div>
+
+  {content ? (
+    <div class="e-content" set:html={content} />
+  ) : (
+    <div class="e-content"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

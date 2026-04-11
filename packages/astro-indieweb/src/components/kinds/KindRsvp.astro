@@ -1,0 +1,79 @@
+---
+/**
+ * RSVP template — responding to an event invitation.
+ *
+ * @example
+ * ```astro
+ * <KindRsvp
+ *   inReplyTo="https://example.com/event/indiewebcamp"
+ *   rsvp="yes"
+ *   citationName="IndieWebCamp 2026"
+ *   content="<p>Looking forward to it!</p>"
+ * />
+ * ```
+ */
+interface Props {
+  inReplyTo: string;
+  rsvp: 'yes' | 'no' | 'maybe' | 'interested';
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  citationName?: string;
+  citationAuthor?: string;
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  inReplyTo, rsvp, content, published, url, author,
+  citationName, citationAuthor,
+  category, syndication, class: className,
+} = Astro.props;
+
+const rsvpLabels: Record<string, string> = {
+  yes: 'Attending',
+  no: 'Not attending',
+  maybe: 'Maybe attending',
+  interested: 'Interested in',
+};
+const rsvpLabel = rsvpLabels[rsvp] || rsvp;
+
+const displayUrl = (() => {
+  try { return new URL(inReplyTo).hostname; } catch { return inReplyTo; }
+})();
+---
+
+<article class:list={["h-entry pk-rsvp", `pk-rsvp--${rsvp}`, className]}>
+  <div class="pk-citation">
+    <span class="pk-citation__label">{rsvpLabel}</span>
+    <data class="p-rsvp" value={rsvp}>{rsvp}</data>
+    <div class="pk-citation__target h-cite">
+      <a class="u-in-reply-to u-url" href={inReplyTo}>
+        <span class="p-name">{citationName || displayUrl}</span>
+      </a>
+      {citationAuthor && <span class="pk-citation__author">by <span class="p-author h-card">{citationAuthor}</span></span>}
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

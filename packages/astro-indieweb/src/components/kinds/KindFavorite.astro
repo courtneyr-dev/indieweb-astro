@@ -1,0 +1,66 @@
+---
+/**
+ * Favorite template — marking something as a favorite.
+ *
+ * @example
+ * ```astro
+ * <KindFavorite
+ *   favoriteName="VSCode"
+ *   favoriteUrl="https://code.visualstudio.com"
+ *   favoriteRating={5}
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+
+interface Props {
+  favoriteName: string;
+  favoriteUrl?: string;
+  favoriteRating?: number;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  favoriteName, favoriteUrl, favoriteRating, content, published, url, author,
+  category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-favorite", className]}>
+  <div class="pk-lifelog-card">
+    <div class="pk-lifelog-card__info">
+      <h3 class="pk-lifelog-card__title p-name">
+        {favoriteUrl
+          ? <a class="u-url" href={favoriteUrl}>{favoriteName}</a>
+          : favoriteName}
+      </h3>
+      {favoriteRating != null && <Rating value={favoriteRating} />}
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

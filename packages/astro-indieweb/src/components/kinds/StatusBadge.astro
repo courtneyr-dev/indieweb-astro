@@ -1,0 +1,23 @@
+---
+/**
+ * Status badge for consumption kinds (watch, read, play).
+ *
+ * Shows the current status (watching, to-watch, finished, etc.)
+ * as a small badge element.
+ *
+ * @example
+ * ```astro
+ * <StatusBadge status="watching" />
+ * ```
+ */
+interface Props {
+  status: string;
+  class?: string;
+}
+
+const { status, class: className } = Astro.props;
+---
+
+<span class:list={["pk-badge", `pk-badge--${status}`, className]}>
+  {status.replace(/-/g, ' ')}
+</span>

@@ -1,0 +1,95 @@
+---
+/**
+ * Listen template — music/audio scrobble.
+ *
+ * Two-column card: cover art + track metadata.
+ * Follows the WordPress Post Kinds listen-card pattern.
+ *
+ * @example
+ * ```astro
+ * <KindListen
+ *   listenTrack="Bohemian Rhapsody"
+ *   listenArtist="Queen"
+ *   listenAlbum="A Night at the Opera"
+ *   listenCover="/images/opera.jpg"
+ *   listenRating={5}
+ *   published="2026-04-11T20:00:00Z"
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+
+interface Props {
+  listenTrack: string;
+  listenArtist?: string;
+  listenAlbum?: string;
+  listenCover?: string;
+  listenUrl?: string;
+  listenMbid?: string;
+  listenRating?: number;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  listenTrack, listenArtist, listenAlbum, listenCover, listenUrl, listenMbid, listenRating,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-listen", className]}>
+  <div class="pk-media-card h-cite">
+    {listenCover && (
+      <div class="pk-media-card__image">
+        <img class="u-photo" src={listenCover} alt={`${listenAlbum || listenTrack} cover`} loading="lazy" />
+      </div>
+    )}
+
+    <div class="pk-media-card__info">
+      <h3 class="pk-media-card__title p-name">
+        {listenUrl
+          ? <a class="u-url" href={listenUrl}>{listenTrack}</a>
+          : listenTrack}
+      </h3>
+
+      {listenArtist && (
+        <p class="pk-media-card__subtitle">
+          <span class="p-author h-card"><span class="p-name">{listenArtist}</span></span>
+        </p>
+      )}
+
+      {listenAlbum && <p class="pk-media-card__meta">{listenAlbum}</p>}
+
+      {listenRating != null && <Rating value={listenRating} />}
+
+      {published && (
+        <time class="pk-media-card__timestamp dt-published" datetime={published}>
+          {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </time>
+      )}
+    </div>
+
+    {listenUrl && <data class="u-listen-of" value={listenUrl} hidden />}
+    {listenMbid && <data class="u-uid" value={`https://musicbrainz.org/recording/${listenMbid}`} hidden />}
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

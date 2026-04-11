@@ -1,0 +1,77 @@
+---
+/**
+ * Note template — short, untitled content.
+ *
+ * The simplest post kind. Just content with no title,
+ * like a tweet or status update.
+ *
+ * @example
+ * ```astro
+ * <KindNote
+ *   content="<p>Just went for a walk in the park.</p>"
+ *   published="2026-04-11T10:00:00Z"
+ *   url="/notes/123"
+ * />
+ * ```
+ */
+interface Props {
+  content?: string;
+  published?: string;
+  updated?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  photo?: string | string[];
+  video?: string | string[];
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  content,
+  published,
+  updated,
+  url,
+  author,
+  photo,
+  video,
+  category,
+  syndication,
+  class: className,
+} = Astro.props;
+
+const photos = photo ? (Array.isArray(photo) ? photo : [photo]) : [];
+const videos = video ? (Array.isArray(video) ? video : [video]) : [];
+---
+
+<article class:list={["h-entry pk-note", className]}>
+  {author && (
+    <span class="p-author h-card">
+      {author.photo && <img class="u-photo" src={author.photo} alt="" width="48" height="48" />}
+      {author.url
+        ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+        : <span class="p-name">{author.name}</span>}
+    </span>
+  )}
+
+  {photos.map((src) => <img class="u-photo" src={src} alt="" />)}
+  {videos.map((src) => <video class="u-video" src={src} controls></video>)}
+
+  {content ? (
+    <div class="e-content" set:html={content} />
+  ) : (
+    <div class="e-content"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {updated && <time class="dt-updated" datetime={updated} />}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

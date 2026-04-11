@@ -1,0 +1,113 @@
+---
+/**
+ * Read template — book/reading progress.
+ *
+ * Two-column card: book cover + metadata with progress bar.
+ * Follows the WordPress Post Kinds read-progress pattern.
+ *
+ * @example
+ * ```astro
+ * <KindRead
+ *   readTitle="Designing Data-Intensive Applications"
+ *   readAuthor="Martin Kleppmann"
+ *   readStatus="reading"
+ *   readProgress={65}
+ *   readCover="/images/ddia.jpg"
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+import StatusBadge from './StatusBadge.astro';
+
+interface Props {
+  readTitle: string;
+  readAuthor?: string;
+  readIsbn?: string;
+  readCover?: string;
+  readStatus?: string;
+  readProgress?: number;
+  readPages?: number;
+  readUrl?: string;
+  readPublisher?: string;
+  readRating?: number;
+  readStartedAt?: string;
+  readFinishedAt?: string;
+  readReview?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  readTitle, readAuthor, readIsbn, readCover,
+  readStatus, readProgress, readPages, readUrl, readPublisher, readRating,
+  readStartedAt, readFinishedAt, readReview,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-read", className]}>
+  <div class="pk-media-card h-cite u-read-of">
+    {readCover && (
+      <div class="pk-media-card__image pk-media-card__image--portrait">
+        <img class="u-photo" src={readCover} alt={`${readTitle} cover`} loading="lazy" />
+      </div>
+    )}
+
+    <div class="pk-media-card__info">
+      {readStatus && <StatusBadge status={readStatus} />}
+
+      <h3 class="pk-media-card__title p-name">
+        {readUrl
+          ? <a class="u-url" href={readUrl}>{readTitle}</a>
+          : readTitle}
+      </h3>
+
+      {readAuthor && <p class="pk-media-card__subtitle p-author">{readAuthor}</p>}
+      {readPublisher && <p class="pk-media-card__meta">{readPublisher}</p>}
+      {readIsbn && <p class="pk-media-card__meta u-uid">ISBN: {readIsbn}</p>}
+
+      {readProgress != null && (
+        <div class="pk-read__progress">
+          <div class="pk-read__progress-bar" style={`width: ${Math.min(readProgress, 100)}%`} role="progressbar" aria-valuenow={readProgress} aria-valuemin={0} aria-valuemax={100}>
+          </div>
+          <span class="pk-read__progress-label">{readProgress}%{readPages ? ` of ${readPages} pages` : ''}</span>
+        </div>
+      )}
+
+      {readRating != null && <Rating value={readRating} />}
+
+      {readReview && <p class="pk-media-card__notes">{readReview}</p>}
+
+      <div class="pk-media-card__dates">
+        {readStartedAt && <span>Started: <time datetime={readStartedAt}>{new Date(readStartedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</time></span>}
+        {readFinishedAt && <span>Finished: <time datetime={readFinishedAt}>{new Date(readFinishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</time></span>}
+      </div>
+
+      {published && (
+        <time class="pk-media-card__timestamp dt-published" datetime={published}>
+          {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </time>
+      )}
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

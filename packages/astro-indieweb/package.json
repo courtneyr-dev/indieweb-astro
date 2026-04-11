@@ -13,6 +13,7 @@
     "./components/RelMe.astro": "./src/components/RelMe.astro",
     "./components/IndieWebHead.astro": "./src/components/IndieWebHead.astro",
     "./components/Webmentions.astro": "./src/components/Webmentions.astro",
+    "./components/PostKind.astro": "./src/components/PostKind.astro",
     "./routes": "./src/routes/index.ts"
   },
   "scripts": {

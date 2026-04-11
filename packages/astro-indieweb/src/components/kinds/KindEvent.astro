@@ -1,0 +1,90 @@
+---
+/**
+ * Event template — uses h-event instead of h-entry.
+ *
+ * @example
+ * ```astro
+ * <KindEvent
+ *   name="IndieWebCamp Portland"
+ *   eventStart="2026-06-15T09:00:00-07:00"
+ *   eventEnd="2026-06-16T18:00:00-07:00"
+ *   eventLocation="Portland, OR"
+ *   eventUrl="https://indieweb.org/2026/Portland"
+ * />
+ * ```
+ */
+interface Props {
+  name: string;
+  eventStart: string;
+  eventEnd?: string;
+  eventDuration?: string;
+  eventLocation?: string;
+  eventUrl?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  name, eventStart, eventEnd, eventDuration, eventLocation, eventUrl,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+
+const startDate = new Date(eventStart);
+const endDate = eventEnd ? new Date(eventEnd) : null;
+const sameDay = endDate && startDate.toDateString() === endDate.toDateString();
+---
+
+<article class:list={["h-event pk-event", className]}>
+  <h1 class="p-name">
+    {eventUrl ? <a class="u-url" href={eventUrl}>{name}</a> : name}
+  </h1>
+
+  <div class="pk-event__when">
+    <time class="dt-start" datetime={eventStart}>
+      {startDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+      {startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+    </time>
+    {endDate && (
+      <span>
+        {' — '}
+        <time class="dt-end" datetime={eventEnd}>
+          {sameDay
+            ? endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+            : endDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) + ' ' + endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+        </time>
+      </span>
+    )}
+    {eventDuration && !eventEnd && <span class="dt-duration">({eventDuration})</span>}
+  </div>
+
+  {eventLocation && (
+    <p class="pk-event__where p-location">
+      <span aria-hidden="true">&#x1F4CD;</span> {eventLocation}
+    </p>
+  )}
+
+  {content ? (
+    <div class="e-content p-description" set:html={content} />
+  ) : (
+    <div class="e-content p-description"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && <time class="dt-published" datetime={published} hidden />}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

@@ -1,0 +1,89 @@
+---
+/**
+ * Reply template — response to another post.
+ *
+ * Shows "In reply to: [URL]" citation header with u-in-reply-to,
+ * followed by the reply content.
+ *
+ * @example
+ * ```astro
+ * <KindReply
+ *   inReplyTo="https://example.com/post/123"
+ *   citationName="Original Post Title"
+ *   citationAuthor="Jane Doe"
+ *   content="<p>Great point! I think...</p>"
+ *   published="2026-04-11T10:00:00Z"
+ * />
+ * ```
+ */
+interface Props {
+  inReplyTo: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  citationName?: string;
+  citationAuthor?: string;
+  citationAuthorUrl?: string;
+  citationPhoto?: string;
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  inReplyTo, content, published, url, author,
+  citationName, citationAuthor, citationAuthorUrl, citationPhoto,
+  category, syndication, class: className,
+} = Astro.props;
+
+const displayUrl = (() => {
+  try { return new URL(inReplyTo).hostname; } catch { return inReplyTo; }
+})();
+---
+
+<article class:list={["h-entry pk-reply", className]}>
+  <div class="pk-citation">
+    <span class="pk-citation__label">In reply to</span>
+    <div class="pk-citation__target h-cite">
+      {citationPhoto && <img class="u-photo" src={citationPhoto} alt="" width="48" height="48" />}
+      <div>
+        <a class="u-in-reply-to u-url" href={inReplyTo}>
+          <span class="p-name">{citationName || displayUrl}</span>
+        </a>
+        {citationAuthor && (
+          <span class="pk-citation__author">
+            by {citationAuthorUrl
+              ? <a class="p-author h-card" href={citationAuthorUrl}>{citationAuthor}</a>
+              : <span class="p-author h-card">{citationAuthor}</span>}
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+
+  {content ? (
+    <div class="e-content" set:html={content} />
+  ) : (
+    <div class="e-content"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.photo && <img class="u-photo" src={author.photo} alt="" width="24" height="24" />}
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

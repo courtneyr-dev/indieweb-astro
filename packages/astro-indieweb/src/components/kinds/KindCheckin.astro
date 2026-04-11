@@ -1,0 +1,106 @@
+---
+/**
+ * Check-in template — location check-in.
+ *
+ * Venue card with address and optional coordinates.
+ * Follows the WordPress Post Kinds checkin-card pattern.
+ *
+ * @example
+ * ```astro
+ * <KindCheckin
+ *   checkinName="Blue Bottle Coffee"
+ *   checkinAddress="315 Linden St"
+ *   checkinLocality="San Francisco"
+ *   checkinRegion="CA"
+ *   checkinCountry="US"
+ *   latitude={37.7749}
+ *   longitude={-122.4194}
+ * />
+ * ```
+ */
+interface Props {
+  checkinName: string;
+  checkinUrl?: string;
+  checkinAddress?: string;
+  checkinLocality?: string;
+  checkinRegion?: string;
+  checkinCountry?: string;
+  latitude?: number;
+  longitude?: number;
+  photo?: string | string[];
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  checkinName, checkinUrl, checkinAddress, checkinLocality, checkinRegion, checkinCountry,
+  latitude, longitude, photo, content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+
+const photos = photo ? (Array.isArray(photo) ? photo : [photo]) : [];
+const locationParts = [checkinLocality, checkinRegion, checkinCountry].filter(Boolean);
+---
+
+<article class:list={["h-entry pk-checkin", className]}>
+  <div class="pk-location-card p-location h-card u-checkin">
+    <div class="pk-location-card__header">
+      <span class="pk-location-card__icon" aria-hidden="true">&#x1F4CD;</span>
+      <h3 class="pk-location-card__name p-name">
+        {checkinUrl
+          ? <a class="u-url" href={checkinUrl}>{checkinName}</a>
+          : checkinName}
+      </h3>
+    </div>
+
+    {(checkinAddress || locationParts.length > 0) && (
+      <div class="pk-location-card__address p-adr h-adr">
+        {checkinAddress && <span class="p-street-address">{checkinAddress}</span>}
+        {locationParts.length > 0 && (
+          <span class="pk-location-card__locality">
+            {checkinLocality && <span class="p-locality">{checkinLocality}</span>}
+            {checkinRegion && <span class="p-region">{checkinRegion}</span>}
+            {checkinCountry && <span class="p-country-name">{checkinCountry}</span>}
+          </span>
+        )}
+      </div>
+    )}
+
+    {(latitude != null && longitude != null) && (
+      <span class="p-geo h-geo" hidden>
+        <data class="p-latitude" value={String(latitude)} />
+        <data class="p-longitude" value={String(longitude)} />
+      </span>
+    )}
+  </div>
+
+  {photos.map((src) => <img class="u-photo" src={src} alt="" loading="lazy" />)}
+
+  {content ? (
+    <div class="e-content" set:html={content} />
+  ) : (
+    <div class="e-content"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

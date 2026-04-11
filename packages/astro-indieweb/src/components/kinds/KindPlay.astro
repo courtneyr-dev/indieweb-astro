@@ -1,0 +1,91 @@
+---
+/**
+ * Play template — video game log.
+ *
+ * Two-column card: game cover + metadata with status and hours played.
+ *
+ * @example
+ * ```astro
+ * <KindPlay
+ *   playTitle="Zelda: Tears of the Kingdom"
+ *   playPlatform="Nintendo Switch"
+ *   playStatus="playing"
+ *   playHours={45}
+ *   playRating={5}
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+import StatusBadge from './StatusBadge.astro';
+
+interface Props {
+  playTitle: string;
+  playPlatform?: string;
+  playStatus?: string;
+  playHours?: number;
+  playCover?: string;
+  playRating?: number;
+  playReview?: string;
+  playUrl?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  playTitle, playPlatform, playStatus, playHours, playCover, playRating, playReview, playUrl,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-play", className]}>
+  <div class="pk-media-card">
+    {playCover && (
+      <div class="pk-media-card__image pk-media-card__image--portrait">
+        <img class="u-photo" src={playCover} alt={`${playTitle} cover`} loading="lazy" />
+      </div>
+    )}
+
+    <div class="pk-media-card__info">
+      {playStatus && <StatusBadge status={playStatus} />}
+
+      <h3 class="pk-media-card__title p-name">
+        {playUrl
+          ? <a class="u-url" href={playUrl}>{playTitle}</a>
+          : playTitle}
+      </h3>
+
+      {playPlatform && <p class="pk-media-card__subtitle">{playPlatform}</p>}
+      {playHours != null && <p class="pk-media-card__meta">{playHours} hours played</p>}
+
+      {playRating != null && <Rating value={playRating} />}
+
+      {playReview && <p class="pk-media-card__notes">{playReview}</p>}
+
+      {published && (
+        <time class="pk-media-card__timestamp dt-published" datetime={published}>
+          {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </time>
+      )}
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

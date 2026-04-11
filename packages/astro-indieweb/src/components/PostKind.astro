@@ -1,0 +1,109 @@
+---
+/**
+ * Post Kind dispatcher — renders a post using the correct kind template.
+ *
+ * Accepts a `kind` string and a flat object of post data (from a CMS or
+ * frontmatter). Routes to the matching kind-specific template component,
+ * each with proper microformats2 markup.
+ *
+ * Falls back to the Note template for unknown kinds.
+ *
+ * @example
+ * ```astro
+ * ---
+ * // From EmDash or any data source
+ * const post = await getPost(Astro.params.slug);
+ * ---
+ * <PostKind kind={post.kind} {...post} />
+ * ```
+ *
+ * @example
+ * ```astro
+ * <PostKind
+ *   kind="listen"
+ *   listenTrack="Bohemian Rhapsody"
+ *   listenArtist="Queen"
+ *   listenRating={5}
+ *   published="2026-04-11T20:00:00Z"
+ * />
+ * ```
+ */
+import KindNote from './kinds/KindNote.astro';
+import KindArticle from './kinds/KindArticle.astro';
+import KindPhoto from './kinds/KindPhoto.astro';
+import KindVideo from './kinds/KindVideo.astro';
+import KindAudio from './kinds/KindAudio.astro';
+import KindReply from './kinds/KindReply.astro';
+import KindLike from './kinds/KindLike.astro';
+import KindRepost from './kinds/KindRepost.astro';
+import KindBookmark from './kinds/KindBookmark.astro';
+import KindRsvp from './kinds/KindRsvp.astro';
+import KindQuotation from './kinds/KindQuotation.astro';
+import KindTagReply from './kinds/KindTagReply.astro';
+import KindCheckin from './kinds/KindCheckin.astro';
+import KindListen from './kinds/KindListen.astro';
+import KindWatch from './kinds/KindWatch.astro';
+import KindRead from './kinds/KindRead.astro';
+import KindPlay from './kinds/KindPlay.astro';
+import KindJam from './kinds/KindJam.astro';
+import KindEat from './kinds/KindEat.astro';
+import KindDrink from './kinds/KindDrink.astro';
+import KindChat from './kinds/KindChat.astro';
+import KindEvent from './kinds/KindEvent.astro';
+import KindReview from './kinds/KindReview.astro';
+import KindRecipe from './kinds/KindRecipe.astro';
+import KindMood from './kinds/KindMood.astro';
+import KindFavorite from './kinds/KindFavorite.astro';
+import KindWish from './kinds/KindWish.astro';
+import KindAcquisition from './kinds/KindAcquisition.astro';
+
+interface Props {
+  /** Post kind slug (e.g., "note", "article", "reply", "listen") */
+  kind: string;
+  /** All other props are passed through to the kind template */
+  [key: string]: unknown;
+}
+
+const { kind, ...rest } = Astro.props;
+
+/**
+ * Map of kind slug to component.
+ * Unknown kinds fall back to the Note template.
+ */
+const COMPONENTS: Record<string, any> = {
+  note: KindNote,
+  article: KindArticle,
+  photo: KindPhoto,
+  video: KindVideo,
+  audio: KindAudio,
+  reply: KindReply,
+  like: KindLike,
+  repost: KindRepost,
+  bookmark: KindBookmark,
+  rsvp: KindRsvp,
+  quotation: KindQuotation,
+  'tag-reply': KindTagReply,
+  checkin: KindCheckin,
+  listen: KindListen,
+  watch: KindWatch,
+  read: KindRead,
+  play: KindPlay,
+  jam: KindJam,
+  eat: KindEat,
+  drink: KindDrink,
+  chat: KindChat,
+  event: KindEvent,
+  review: KindReview,
+  recipe: KindRecipe,
+  mood: KindMood,
+  favorite: KindFavorite,
+  wish: KindWish,
+  acquisition: KindAcquisition,
+};
+
+const Component = COMPONENTS[kind] || KindNote;
+---
+
+<Component {...rest}>
+  <slot />
+</Component>

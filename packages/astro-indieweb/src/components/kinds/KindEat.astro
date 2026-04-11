@@ -1,0 +1,85 @@
+---
+/**
+ * Eat template — food log entry.
+ *
+ * @example
+ * ```astro
+ * <KindEat
+ *   eatName="Margherita Pizza"
+ *   eatType="meal"
+ *   eatCuisine="Italian"
+ *   eatLocationName="Joe's Pizza"
+ *   eatRating={4}
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+
+interface Props {
+  eatName: string;
+  eatType?: string;
+  eatPhoto?: string;
+  eatRating?: number;
+  eatLocationName?: string;
+  eatLocationLocality?: string;
+  eatCuisine?: string;
+  eatNotes?: string;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  eatName, eatType, eatPhoto, eatRating, eatLocationName, eatLocationLocality,
+  eatCuisine, eatNotes, content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-eat", className]}>
+  <div class="pk-lifelog-card">
+    {eatPhoto && <img class="u-photo pk-lifelog-card__photo" src={eatPhoto} alt={eatName} loading="lazy" />}
+
+    <div class="pk-lifelog-card__info">
+      {eatType && <span class="pk-badge">{eatType}</span>}
+
+      <h3 class="pk-lifelog-card__title p-name">{eatName}</h3>
+
+      {eatCuisine && <p class="pk-lifelog-card__meta">{eatCuisine}</p>}
+
+      {eatLocationName && (
+        <p class="pk-lifelog-card__location p-location">
+          <span aria-hidden="true">&#x1F4CD;</span>
+          {eatLocationName}{eatLocationLocality ? `, ${eatLocationLocality}` : ''}
+        </p>
+      )}
+
+      {eatRating != null && <Rating value={eatRating} />}
+
+      {eatNotes && <p class="pk-lifelog-card__notes">{eatNotes}</p>}
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

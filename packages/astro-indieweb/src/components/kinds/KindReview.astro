@@ -1,0 +1,77 @@
+---
+/**
+ * Review template — uses h-review root class.
+ *
+ * @example
+ * ```astro
+ * <KindReview
+ *   reviewItemName="Pixel 8 Pro"
+ *   reviewItemUrl="https://store.google.com/pixel"
+ *   reviewRating={4}
+ *   reviewBest={5}
+ *   content="<p>Great camera, solid battery life.</p>"
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+
+interface Props {
+  reviewItemName: string;
+  reviewItemUrl?: string;
+  reviewRating: number;
+  reviewBest?: number;
+  reviewWorst?: number;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  reviewItemName, reviewItemUrl, reviewRating, reviewBest = 5, reviewWorst = 0,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-review pk-review", className]}>
+  <div class="pk-review__item p-item h-product">
+    <h3 class="p-name">
+      {reviewItemUrl
+        ? <a class="u-url" href={reviewItemUrl}>{reviewItemName}</a>
+        : reviewItemName}
+    </h3>
+  </div>
+
+  <div class="pk-review__rating">
+    <Rating value={reviewRating} best={reviewBest} />
+    <data class="p-best" value={String(reviewBest)} hidden />
+    <data class="p-worst" value={String(reviewWorst)} hidden />
+  </div>
+
+  {content ? (
+    <div class="e-content p-description" set:html={content} />
+  ) : (
+    <div class="e-content p-description"><slot /></div>
+  )}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>

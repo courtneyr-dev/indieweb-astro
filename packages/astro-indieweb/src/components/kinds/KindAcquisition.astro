@@ -1,0 +1,73 @@
+---
+/**
+ * Acquisition template — something you acquired/purchased.
+ *
+ * @example
+ * ```astro
+ * <KindAcquisition
+ *   acquisitionName="Keychron K2"
+ *   acquisitionPrice="$79"
+ *   acquisitionRating={5}
+ * />
+ * ```
+ */
+import Rating from './Rating.astro';
+
+interface Props {
+  acquisitionName: string;
+  acquisitionUrl?: string;
+  acquisitionPhoto?: string;
+  acquisitionPrice?: string;
+  acquisitionRating?: number;
+  content?: string;
+  published?: string;
+  url?: string;
+  author?: { name: string; url?: string; photo?: string };
+  category?: string[];
+  syndication?: string[];
+  class?: string;
+}
+
+const {
+  acquisitionName, acquisitionUrl, acquisitionPhoto, acquisitionPrice, acquisitionRating,
+  content, published, url, author, category, syndication, class: className,
+} = Astro.props;
+---
+
+<article class:list={["h-entry pk-acquisition", className]}>
+  <div class="pk-lifelog-card">
+    {acquisitionPhoto && <img class="u-photo pk-lifelog-card__photo" src={acquisitionPhoto} alt={acquisitionName} loading="lazy" />}
+
+    <div class="pk-lifelog-card__info">
+      <h3 class="pk-lifelog-card__title p-name">
+        {acquisitionUrl
+          ? <a class="u-url" href={acquisitionUrl}>{acquisitionName}</a>
+          : acquisitionName}
+      </h3>
+
+      {acquisitionPrice && <p class="pk-lifelog-card__meta">{acquisitionPrice}</p>}
+
+      {acquisitionRating != null && <Rating value={acquisitionRating} />}
+    </div>
+  </div>
+
+  {content && <div class="e-content" set:html={content} />}
+
+  <footer class="pk-meta">
+    {author && (
+      <span class="p-author h-card">
+        {author.url
+          ? <a class="p-name u-url" href={author.url}>{author.name}</a>
+          : <span class="p-name">{author.name}</span>}
+      </span>
+    )}
+    {published && (
+      <time class="dt-published" datetime={published}>
+        {new Date(published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      </time>
+    )}
+    {url && <a class="u-url" href={url}>permalink</a>}
+    {category?.map((tag) => <span class="p-category">{tag}</span>)}
+    {syndication?.map((syn) => <a class="u-syndication" href={syn}>{new URL(syn).hostname}</a>)}
+  </footer>
+</article>
