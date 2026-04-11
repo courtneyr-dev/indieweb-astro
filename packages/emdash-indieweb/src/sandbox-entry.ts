@@ -38,6 +38,15 @@ import {
   buildRelAttribute,
 } from "@opensourcetogether/indieweb-core/xfn";
 import type { SyndicationTarget } from "@opensourcetogether/indieweb-core/posse";
+import { buildApiCredentialsPage, saveApiCredentials } from "./api-admin.js";
+import {
+  lookupMusic,
+  lookupVideo,
+  lookupBook,
+  lookupGame,
+  lookupVenue,
+  lookupPodcast,
+} from "./api-lookups.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -402,7 +411,7 @@ async function buildSyndicationPage(ctx: PluginContext) {
         block_id: "syndication-settings",
         fields: [
           {
-            type: "checkbox",
+            type: "toggle",
             action_id: "autoSyndicate",
             label: "Auto-syndicate new published posts",
             initial_value: autoSyndicate,
@@ -763,55 +772,146 @@ export default {
   hooks: {
     "content:beforeSave": {
       priority: 100,
-      timeout: 5_000,
+      timeout: 10_000,
       errorPolicy: "continue",
       handler: async (event: ContentHookEvent, ctx: PluginContext) => {
         const content = event.content as Record<string, unknown>;
 
         // Auto-detect post kind from content properties if not explicitly set
-        if (content.kind) return;
+        if (!content.kind) {
+          const mf2Props: Record<string, string[]> = {};
+          const propMappings: Array<[string, string]> = [
+            ["inReplyTo", "in-reply-to"],
+            ["likeOf", "like-of"],
+            ["repostOf", "repost-of"],
+            ["bookmarkOf", "bookmark-of"],
+            ["rsvp", "rsvp"],
+          ];
 
-        const mf2Props: Record<string, string[]> = {};
-        const propMappings: Array<[string, string]> = [
-          ["inReplyTo", "in-reply-to"],
-          ["likeOf", "like-of"],
-          ["repostOf", "repost-of"],
-          ["bookmarkOf", "bookmark-of"],
-          ["rsvp", "rsvp"],
-        ];
+          for (const [contentKey, mf2Key] of propMappings) {
+            const val = content[contentKey];
+            if (typeof val === "string" && val) {
+              mf2Props[mf2Key] = [val];
+            } else if (Array.isArray(val) && val.length > 0) {
+              mf2Props[mf2Key] = val.filter(
+                (v: unknown) => typeof v === "string",
+              );
+            }
+          }
 
-        for (const [contentKey, mf2Key] of propMappings) {
-          const val = content[contentKey];
-          if (typeof val === "string" && val) {
-            mf2Props[mf2Key] = [val];
-          } else if (Array.isArray(val) && val.length > 0) {
-            mf2Props[mf2Key] = val.filter(
-              (v: unknown) => typeof v === "string",
-            );
+          if (content.photo || content.photos) mf2Props.photo = ["present"];
+          if (content.video) mf2Props.video = ["present"];
+          if (content.audio) mf2Props.audio = ["present"];
+
+          const mf2Item = {
+            type: ["h-entry"],
+            properties: {
+              ...mf2Props,
+              ...(content.title ? { name: [content.title as string] } : {}),
+              ...(content.content || content.body
+                ? { content: ["present"] }
+                : {}),
+            },
+          };
+
+          const detectedKind = discoverPostType(mf2Item);
+          if (detectedKind) {
+            content.kind = detectedKind;
+            ctx.log.info(`Auto-detected post kind: ${detectedKind}`);
           }
         }
 
-        // Check for media properties
-        if (content.photo || content.photos) mf2Props.photo = ["present"];
-        if (content.video) mf2Props.video = ["present"];
-        if (content.audio) mf2Props.audio = ["present"];
+        // Enrich metadata from external APIs when lookupQuery is present
+        // but enriched metadata hasn't been stored yet
+        const kind = content.kind as string | undefined;
+        const lookupQuery = content.lookupQuery as string | undefined;
+        if (!kind || !lookupQuery || content.lookupEnriched || !ctx.http)
+          return;
 
-        // Build mf2 item for post type discovery
-        const mf2Item = {
-          type: ["h-entry"],
-          properties: {
-            ...mf2Props,
-            ...(content.title ? { name: [content.title as string] } : {}),
-            ...(content.content || content.body
-              ? { content: ["present"] }
-              : {}),
-          },
-        };
+        try {
+          const kindToLookup: Record<string, string> = {
+            listen: "music",
+            jam: "music",
+            watch: "video",
+            read: "book",
+            play: "game",
+            checkin: "venue",
+            eat: "venue",
+            drink: "venue",
+          };
 
-        const detectedKind = discoverPostType(mf2Item);
-        if (detectedKind) {
-          content.kind = detectedKind;
-          ctx.log.info(`Auto-detected post kind: ${detectedKind}`);
+          const lookupType = kindToLookup[kind];
+          if (!lookupType) return;
+
+          let results;
+          switch (lookupType) {
+            case "music":
+              results = await lookupMusic(ctx, lookupQuery);
+              break;
+            case "video":
+              results = await lookupVideo(ctx, lookupQuery);
+              break;
+            case "book":
+              results = await lookupBook(
+                ctx,
+                lookupQuery,
+                content.isbn as string | undefined,
+              );
+              break;
+            case "game":
+              results = await lookupGame(ctx, lookupQuery);
+              break;
+            case "venue":
+              results = await lookupVenue(ctx, lookupQuery);
+              break;
+          }
+
+          if (results && results.length > 0) {
+            const best = results[0];
+            content.lookupEnriched = true;
+            content.lookupSource = best.source;
+            content.lookupSourceId = best.sourceId;
+            content.lookupMeta = best.meta;
+
+            // Map enriched fields to kind-specific content fields
+            if (lookupType === "music" && best.meta) {
+              content.listenTrack = content.listenTrack || best.title;
+              content.listenArtist = content.listenArtist || best.meta.artist;
+              content.listenAlbum = content.listenAlbum || best.meta.album;
+              content.listenMbid = content.listenMbid || best.meta.mbid;
+            } else if (lookupType === "video" && best.meta) {
+              content.watchTitle = content.watchTitle || best.title;
+              content.watchYear = content.watchYear || best.year;
+              content.watchPoster = content.watchPoster || best.image;
+              content.watchTmdbId = content.watchTmdbId || best.meta.tmdbId;
+              content.watchMediaType =
+                content.watchMediaType || best.meta.mediaType;
+            } else if (lookupType === "book" && best.meta) {
+              content.readTitle = content.readTitle || best.title;
+              content.readAuthor = content.readAuthor || best.meta.author;
+              content.readIsbn = content.readIsbn || best.meta.isbn;
+              content.readCover = content.readCover || best.image;
+            } else if (lookupType === "game") {
+              content.playTitle = content.playTitle || best.title;
+              content.playCover = content.playCover || best.image;
+            } else if (lookupType === "venue" && best.meta) {
+              content.checkinName = content.checkinName || best.title;
+              content.checkinAddress =
+                content.checkinAddress || best.meta.address;
+              content.checkinLocality =
+                content.checkinLocality || best.meta.locality;
+              content.latitude = content.latitude || best.meta.lat;
+              content.longitude = content.longitude || best.meta.lng;
+            }
+
+            ctx.log.info(
+              `Enriched ${kind} post with ${best.source} data: ${best.title}`,
+            );
+          }
+        } catch (err) {
+          ctx.log.warn(
+            `Lookup enrichment failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       },
     },
@@ -1031,6 +1131,22 @@ export default {
           return removeRelMeLink(ctx, index);
         }
 
+        // API Credentials
+        if (
+          interaction.type === "page_load" &&
+          interaction.page === "/api-connections"
+        )
+          return buildApiCredentialsPage(ctx);
+
+        if (
+          interaction.type === "form_submit" &&
+          interaction.action_id === "save_api_credentials"
+        )
+          return saveApiCredentials(
+            ctx,
+            (interaction.values as Record<string, unknown>) ?? {},
+          );
+
         // Webmention actions
         if (
           interaction.type === "button_click" &&
@@ -1123,6 +1239,118 @@ export default {
         }
 
         return { status: "accepted" };
+      },
+    },
+
+    // ── Lookup routes (ported from WP Post Kinds plugin) ──────────
+    lookup: {
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        if (!ctx.http) {
+          return { error: "network:fetch capability required for lookups" };
+        }
+
+        const input = routeCtx.input;
+        const type = input.type as string;
+        const query = input.q as string;
+
+        if (!type || !query) {
+          return { error: "Missing required parameters: type, q" };
+        }
+
+        try {
+          let results;
+          switch (type) {
+            case "music":
+              results = await lookupMusic(
+                ctx,
+                query,
+                input.artist as string | undefined,
+              );
+              break;
+            case "video":
+              results = await lookupVideo(
+                ctx,
+                query,
+                (input.mediaType as string) ?? "multi",
+              );
+              break;
+            case "book":
+              results = await lookupBook(
+                ctx,
+                query,
+                input.isbn as string | undefined,
+              );
+              break;
+            case "game":
+              results = await lookupGame(
+                ctx,
+                query,
+                (input.source as string) ?? "rawg",
+              );
+              break;
+            case "venue":
+              results = await lookupVenue(
+                ctx,
+                query,
+                input.lat as number | undefined,
+                input.lng as number | undefined,
+              );
+              break;
+            case "podcast":
+              results = await lookupPodcast(ctx, query);
+              break;
+            default:
+              return { error: `Unknown lookup type: ${type}` };
+          }
+
+          return { results };
+        } catch (err) {
+          ctx.log.warn(
+            `Lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return {
+            error: "Lookup failed",
+            details: err instanceof Error ? err.message : String(err),
+          };
+        }
+      },
+    },
+
+    // ── Setup route — registers 'kind' field on posts collection ──
+    setup: {
+      handler: async (
+        _routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const enabledRaw = await ctx.kv.get<string>("settings:enabledKinds");
+        const enabledKinds: string[] = enabledRaw
+          ? JSON.parse(enabledRaw)
+          : ["note", "article", "photo", "reply", "like", "repost", "bookmark"];
+
+        const kindOptions = enabledKinds.map((slug) => ({
+          label: getPostKind(slug)?.name ?? slug,
+          value: slug,
+        }));
+
+        const defaultKind =
+          (await ctx.kv.get<string>("settings:defaultKind")) ?? "note";
+
+        return {
+          fields: [
+            {
+              slug: "kind",
+              type: "select",
+              label: "Post Kind",
+              options: kindOptions,
+              defaultValue: defaultKind,
+              collection: "posts",
+            },
+          ],
+          message: `Post kind field configured with ${enabledKinds.length} kinds`,
+        };
       },
     },
   },
