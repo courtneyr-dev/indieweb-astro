@@ -1,0 +1,60 @@
+---
+/**
+ * Wraps a list of h-entry items in an h-feed container.
+ *
+ * The h-feed is a microformats2 container that tells parsers
+ * "these entries belong to one feed." Use it around a list of
+ * `<HEntry>` components on archive or index pages.
+ *
+ * @example
+ * ```astro
+ * <HFeed name="Blog" authorName="Courtney" authorUrl="https://courtneyr.dev">
+ *   {posts.map(post => (
+ *     <HEntry name={post.title} content={post.content} published={post.date} />
+ *   ))}
+ * </HFeed>
+ * ```
+ */
+
+interface Props {
+  /** Feed name/title */
+  name?: string;
+  /** Feed author name (renders a compact h-card) */
+  authorName?: string;
+  /** Feed author URL */
+  authorUrl?: string;
+  /** Feed author photo */
+  authorPhoto?: string;
+  /** HTML element for the root container */
+  as?: 'div' | 'section' | 'main';
+  /** Additional CSS class(es) on the root element */
+  class?: string;
+}
+
+const {
+  name,
+  authorName,
+  authorUrl,
+  authorPhoto,
+  as: Tag = 'div',
+  class: className,
+} = Astro.props;
+
+const rootClass = ['h-feed', className].filter(Boolean).join(' ');
+---
+
+<Tag class={rootClass}>
+  {name && <h1 class="p-name">{name}</h1>}
+
+  {authorName && (
+    <span class="p-author h-card">
+      {authorPhoto && <img class="u-photo" src={authorPhoto} alt="" />}
+      {authorUrl
+        ? <a class="p-name u-url" href={authorUrl}>{authorName}</a>
+        : <span class="p-name">{authorName}</span>
+      }
+    </span>
+  )}
+
+  <slot />
+</Tag>

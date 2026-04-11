@@ -1,0 +1,169 @@
+---
+/**
+ * Wraps content with h-entry microformats2 markup.
+ *
+ * Uses `buildHEntry` from indieweb-core to generate the correct
+ * mf2 class names and properties, then renders them as HTML.
+ *
+ * @example
+ * ```astro
+ * <HEntry
+ *   name="Hello World"
+ *   content="<p>My first post.</p>"
+ *   published="2026-04-10T12:00:00Z"
+ *   url="/hello"
+ *   category={['indieweb', 'astro']}
+ * >
+ *   <p>My first post.</p>
+ * </HEntry>
+ * ```
+ */
+import { buildHEntry } from '@opensourcetogether/indieweb-core/mf2';
+import type { HEntryData } from '@opensourcetogether/indieweb-core/mf2';
+
+interface Props extends HEntryData {
+  /** HTML element for the root container */
+  as?: 'article' | 'div' | 'section';
+  /** Additional CSS class(es) on the root element */
+  class?: string;
+}
+
+const {
+  as: Tag = 'article',
+  class: className,
+  name,
+  summary,
+  content,
+  contentValue,
+  published,
+  updated,
+  author,
+  url,
+  uid,
+  category,
+  syndication,
+  inReplyTo,
+  likeOf,
+  bookmarkOf,
+  repostOf,
+  rsvp,
+  photo,
+  video,
+} = Astro.props;
+
+const entry = buildHEntry({
+  name,
+  summary,
+  content,
+  contentValue,
+  published,
+  updated,
+  author,
+  url,
+  uid,
+  category,
+  syndication,
+  inReplyTo,
+  likeOf,
+  bookmarkOf,
+  repostOf,
+  rsvp,
+  photo,
+  video,
+});
+
+const rootClass = [entry.rootClassName, className].filter(Boolean).join(' ');
+const props = entry.properties;
+---
+
+<Tag class={rootClass}>
+  {props.name && (
+    <slot name="title">
+      <h1 class={props.name.className}>{props.name.value}</h1>
+    </slot>
+  )}
+
+  {props.published && (
+    <time class={props.published.className} datetime={props.published.attributes?.datetime}>
+      {props.published.value}
+    </time>
+  )}
+
+  {props.updated && (
+    <time class={props.updated.className} datetime={props.updated.attributes?.datetime}>
+      {props.updated.value}
+    </time>
+  )}
+
+  {props.author && (
+    props.author.attributes?.href
+      ? <a class={props.author.className} href={props.author.attributes.href}>{props.author.value}</a>
+      : <span class={props.author.className}>{props.author.value}</span>
+  )}
+
+  {props.inReplyTo && (
+    <a class={props.inReplyTo.className} href={props.inReplyTo.attributes?.href}>
+      {props.inReplyTo.value}
+    </a>
+  )}
+
+  {props.likeOf && (
+    <a class={props.likeOf.className} href={props.likeOf.attributes?.href}>
+      {props.likeOf.value}
+    </a>
+  )}
+
+  {props.bookmarkOf && (
+    <a class={props.bookmarkOf.className} href={props.bookmarkOf.attributes?.href}>
+      {props.bookmarkOf.value}
+    </a>
+  )}
+
+  {props.repostOf && (
+    <a class={props.repostOf.className} href={props.repostOf.attributes?.href}>
+      {props.repostOf.value}
+    </a>
+  )}
+
+  {props.rsvp && (
+    <data class={props.rsvp.className} value={props.rsvp.value}>{props.rsvp.value}</data>
+  )}
+
+  {props.photo?.map((p) => (
+    <img class={p.className} src={p.attributes?.src} alt="" />
+  ))}
+
+  {props.video?.map((v) => (
+    <video class={v.className} src={v.attributes?.src} controls></video>
+  ))}
+
+  {props.summary && (
+    <p class={props.summary.className}>{props.summary.value}</p>
+  )}
+
+  {props.content ? (
+    <div class={props.content.className}>
+      <slot />
+    </div>
+  ) : (
+    <slot />
+  )}
+
+  {props.category?.map((cat) => (
+    <span class={cat.className}>{cat.value}</span>
+  ))}
+
+  {props.syndication?.map((syn) => (
+    <a class={syn.className} href={syn.attributes?.href}>{syn.value}</a>
+  ))}
+
+  {props.url && (
+    <a class={props.url.className} href={props.url.attributes?.href}>
+      <slot name="permalink">Permalink</slot>
+    </a>
+  )}
+
+  {props.uid && (
+    <a class={props.uid.className} href={props.uid.attributes?.href} style="display:none"></a>
+  )}
+</Tag>

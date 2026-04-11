@@ -8,7 +8,10 @@
     "./mf2": "./src/mf2/index.ts",
     "./kinds": "./src/kinds/index.ts",
     "./xfn": "./src/xfn/index.ts",
-    "./webmention": "./src/webmention/index.ts"
+    "./webmention": "./src/webmention/index.ts",
+    "./indieauth": "./src/indieauth/index.ts",
+    "./micropub": "./src/micropub/index.ts",
+    "./posse": "./src/posse/index.ts"
   },
   "scripts": {
     "build": "tsc",

@@ -1,0 +1,31 @@
+---
+/**
+ * Identity link with rel="me".
+ *
+ * Used on your homepage to link to your profiles on other sites,
+ * enabling IndieAuth and identity verification.
+ *
+ * @example
+ * ```astro
+ * <RelMe href="https://github.com/courtneyr-dev">GitHub</RelMe>
+ * <RelMe href="https://mastodon.social/@courtneyr" />
+ * <!-- Renders: <a href="..." rel="me">GitHub</a> -->
+ * ```
+ */
+
+interface Props {
+  /** URL of your profile on another site */
+  href: string;
+  /** Additional CSS class(es) */
+  class?: string;
+}
+
+const { href, class: className } = Astro.props;
+
+// Derive a label from the hostname if no slot content
+const hostname = new URL(href).hostname.replace('www.', '');
+---
+
+<a href={href} rel="me" class={className}>
+  <slot>{hostname}</slot>
+</a>

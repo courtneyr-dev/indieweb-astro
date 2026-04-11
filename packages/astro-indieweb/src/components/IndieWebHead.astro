@@ -1,0 +1,66 @@
+---
+/**
+ * Head component for IndieWeb endpoint discovery.
+ *
+ * Renders `<link>` tags in the document `<head>` so that other
+ * IndieWeb services can discover your webmention, IndieAuth,
+ * Micropub, and Microsub endpoints.
+ *
+ * @example
+ * ```astro
+ * <head>
+ *   <IndieWebHead
+ *     webmention="/webmention"
+ *     indieauthAuthorization="/auth"
+ *     indieauthToken="/auth/token"
+ *     micropub="/micropub"
+ *   />
+ * </head>
+ * ```
+ */
+
+interface Props {
+  /** Webmention endpoint URL (absolute or relative) */
+  webmention?: string;
+  /** Webmention.io endpoint (alternative to self-hosted) */
+  webmentionIo?: string;
+  /** IndieAuth authorization endpoint URL */
+  indieauthAuthorization?: string;
+  /** IndieAuth token endpoint URL */
+  indieauthToken?: string;
+  /** Micropub endpoint URL */
+  micropub?: string;
+  /** Microsub endpoint URL */
+  microsub?: string;
+}
+
+const {
+  webmention,
+  webmentionIo,
+  indieauthAuthorization,
+  indieauthToken,
+  micropub,
+  microsub,
+} = Astro.props;
+
+// Webmention.io uses a specific URL format
+const webmentionEndpoint = webmentionIo
+  ? `https://webmention.io/${webmentionIo}/webmention`
+  : webmention;
+---
+
+{webmentionEndpoint && (
+  <link rel="webmention" href={webmentionEndpoint} />
+)}
+{indieauthAuthorization && (
+  <link rel="authorization_endpoint" href={indieauthAuthorization} />
+)}
+{indieauthToken && (
+  <link rel="token_endpoint" href={indieauthToken} />
+)}
+{micropub && (
+  <link rel="micropub" href={micropub} />
+)}
+{microsub && (
+  <link rel="microsub" href={microsub} />
+)}

@@ -1,0 +1,287 @@
+---
+/**
+ * Displays webmentions for the current page, grouped by type.
+ *
+ * Fetches webmentions at render time from either a local store
+ * or the webmention.io API, then renders them grouped as likes,
+ * reposts, replies, bookmarks, and mentions.
+ *
+ * @example
+ * ```astro
+ * ---
+ * import Webmentions from '@opensourcetogether/astro-indieweb/components/Webmentions.astro';
+ * ---
+ * <article>
+ *   <h1>My Post</h1>
+ *   <p>Content here...</p>
+ *   <Webmentions
+ *     target={Astro.url.href}
+ *     webmentionIoToken="your-token"
+ *   />
+ * </article>
+ * ```
+ *
+ * @example
+ * ```astro
+ * ---
+ * // With a local store (SSR)
+ * import Webmentions from '@opensourcetogether/astro-indieweb/components/Webmentions.astro';
+ * import { myStore } from '../lib/webmention-store';
+ * const mentions = await myStore.findByTarget(Astro.url.href);
+ * ---
+ * <Webmentions target={Astro.url.href} webmentions={mentions} />
+ * ```
+ */
+import type { WebmentionRecord } from '@opensourcetogether/indieweb-core/webmention';
+
+interface Props {
+  /** The URL to show webmentions for (usually the current page) */
+  target: string;
+  /** Pre-fetched webmention records (skip fetch if provided) */
+  webmentions?: WebmentionRecord[];
+  /** webmention.io API token (fetches from webmention.io at render time) */
+  webmentionIoToken?: string;
+  /** Custom endpoint URL to fetch webmentions from */
+  endpoint?: string;
+  /** Show likes section (default: true) */
+  showLikes?: boolean;
+  /** Show reposts section (default: true) */
+  showReposts?: boolean;
+  /** Show replies section (default: true) */
+  showReplies?: boolean;
+  /** Show bookmarks section (default: true) */
+  showBookmarks?: boolean;
+  /** Show plain mentions section (default: true) */
+  showMentions?: boolean;
+  /** Additional CSS class(es) on the root element */
+  class?: string;
+}
+
+const {
+  target,
+  webmentions: providedWebmentions,
+  webmentionIoToken,
+  endpoint,
+  showLikes = true,
+  showReposts = true,
+  showReplies = true,
+  showBookmarks = true,
+  showMentions = true,
+  class: className,
+} = Astro.props;
+
+// Fetch webmentions if not provided directly
+let webmentions: WebmentionRecord[] = providedWebmentions || [];
+
+if (!providedWebmentions) {
+  if (webmentionIoToken) {
+    // Fetch from webmention.io API
+    try {
+      const apiUrl = `https://webmention.io/api/mentions.jf2?target=${encodeURIComponent(target)}&token=${encodeURIComponent(webmentionIoToken)}`;
+      const response = await fetch(apiUrl);
+      if (response.ok) {
+        const data = await response.json();
+        webmentions = (data.children || []).map(mapWebmentionIoEntry);
+      }
+    } catch {
+      // Silently fail — show empty webmentions
+    }
+  } else if (endpoint) {
+    // Fetch from custom endpoint
+    try {
+      const apiUrl = `${endpoint}?target=${encodeURIComponent(target)}`;
+      const response = await fetch(apiUrl);
+      if (response.ok) {
+        const data = await response.json();
+        webmentions = data.webmentions || [];
+      }
+    } catch {
+      // Silently fail
+    }
+  }
+}
+
+// Group by type
+const likes = showLikes ? webmentions.filter((w) => w.type === 'like') : [];
+const reposts = showReposts ? webmentions.filter((w) => w.type === 'repost') : [];
+const replies = showReplies ? webmentions.filter((w) => w.type === 'reply') : [];
+const bookmarks = showBookmarks ? webmentions.filter((w) => w.type === 'bookmark') : [];
+const mentions = showMentions ? webmentions.filter((w) => w.type === 'mention') : [];
+const rsvps = webmentions.filter((w) => w.type === 'rsvp');
+
+const hasAny = likes.length + reposts.length + replies.length + bookmarks.length + mentions.length + rsvps.length > 0;
+
+/**
+ * Map a webmention.io JF2 entry to our WebmentionRecord format.
+ */
+function mapWebmentionIoEntry(entry: Record<string, unknown>): WebmentionRecord {
+  const wmProperty = entry['wm-property'] as string || '';
+  const author = entry.author as Record<string, string> | undefined;
+
+  let type: WebmentionRecord['type'] = 'mention';
+  if (wmProperty === 'like-of') type = 'like';
+  else if (wmProperty === 'repost-of') type = 'repost';
+  else if (wmProperty === 'in-reply-to') type = 'reply';
+  else if (wmProperty === 'bookmark-of') type = 'bookmark';
+  else if (wmProperty === 'tag-of') type = 'tag';
+  else if (entry.rsvp) type = 'rsvp';
+
+  const content = entry.content as Record<string, string> | undefined;
+
+  return {
+    source: (entry['wm-source'] as string) || (entry.url as string) || '',
+    target: (entry['wm-target'] as string) || target,
+    verified: true,
+    type,
+    authorName: author?.name,
+    authorUrl: author?.url,
+    authorPhoto: author?.photo,
+    content: content?.text || content?.html,
+    published: (entry.published as string) || (entry['wm-received'] as string),
+    receivedAt: (entry['wm-received'] as string) || new Date().toISOString(),
+    rsvpValue: entry.rsvp as WebmentionRecord['rsvpValue'],
+  };
+}
+---
+
+{hasAny && (
+  <div class:list={['webmentions', className]}>
+    {likes.length > 0 && (
+      <section class="webmentions-likes">
+        <h3 class="webmentions-heading">
+          {likes.length} {likes.length === 1 ? 'Like' : 'Likes'}
+        </h3>
+        <ul class="webmentions-faces">
+          {likes.map((wm) => (
+            <li>
+              {wm.authorUrl ? (
+                <a href={wm.authorUrl} title={wm.authorName || 'Someone'}>
+                  {wm.authorPhoto
+                    ? <img src={wm.authorPhoto} alt={wm.authorName || ''} class="webmention-avatar" loading="lazy" width="48" height="48" />
+                    : <span class="webmention-avatar-placeholder">{(wm.authorName || '?')[0]}</span>
+                  }
+                </a>
+              ) : (
+                wm.authorPhoto
+                  ? <img src={wm.authorPhoto} alt={wm.authorName || ''} class="webmention-avatar" loading="lazy" width="48" height="48" />
+                  : <span class="webmention-avatar-placeholder">{(wm.authorName || '?')[0]}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    {reposts.length > 0 && (
+      <section class="webmentions-reposts">
+        <h3 class="webmentions-heading">
+          {reposts.length} {reposts.length === 1 ? 'Repost' : 'Reposts'}
+        </h3>
+        <ul class="webmentions-faces">
+          {reposts.map((wm) => (
+            <li>
+              {wm.authorUrl ? (
+                <a href={wm.authorUrl} title={wm.authorName || 'Someone'}>
+                  {wm.authorPhoto
+                    ? <img src={wm.authorPhoto} alt={wm.authorName || ''} class="webmention-avatar" loading="lazy" width="48" height="48" />
+                    : <span class="webmention-avatar-placeholder">{(wm.authorName || '?')[0]}</span>
+                  }
+                </a>
+              ) : (
+                <span class="webmention-avatar-placeholder">{(wm.authorName || '?')[0]}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    {bookmarks.length > 0 && (
+      <section class="webmentions-bookmarks">
+        <h3 class="webmentions-heading">
+          {bookmarks.length} {bookmarks.length === 1 ? 'Bookmark' : 'Bookmarks'}
+        </h3>
+        <ul class="webmentions-list">
+          {bookmarks.map((wm) => (
+            <li class="webmention-item">
+              <a href={wm.source}>{wm.authorName || wm.source}</a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    {rsvps.length > 0 && (
+      <section class="webmentions-rsvps">
+        <h3 class="webmentions-heading">RSVPs</h3>
+        <ul class="webmentions-list">
+          {rsvps.map((wm) => (
+            <li class="webmention-item">
+              {wm.authorUrl
+                ? <a href={wm.authorUrl}>{wm.authorName || 'Someone'}</a>
+                : <span>{wm.authorName || 'Someone'}</span>
+              }
+              {' '}<span class="webmention-rsvp-value">{wm.rsvpValue || 'yes'}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    {replies.length > 0 && (
+      <section class="webmentions-replies">
+        <h3 class="webmentions-heading">
+          {replies.length} {replies.length === 1 ? 'Reply' : 'Replies'}
+        </h3>
+        <ol class="webmentions-thread">
+          {replies.map((wm) => (
+            <li class="webmention-reply h-cite">
+              <div class="webmention-reply-meta">
+                {wm.authorPhoto && (
+                  <img src={wm.authorPhoto} alt="" class="webmention-avatar" loading="lazy" width="48" height="48" />
+                )}
+                <span>
+                  {wm.authorUrl
+                    ? <a href={wm.authorUrl} class="webmention-author p-author h-card">{wm.authorName || 'Someone'}</a>
+                    : <span class="webmention-author">{wm.authorName || 'Someone'}</span>
+                  }
+                  {wm.published && (
+                    <time class="webmention-date dt-published" datetime={wm.published}>
+                      {new Date(wm.published).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                      })}
+                    </time>
+                  )}
+                </span>
+              </div>
+              {wm.content && (
+                <div class="webmention-content p-content">{wm.content}</div>
+              )}
+              <a href={wm.source} class="webmention-source u-url">View original</a>
+            </li>
+          ))}
+        </ol>
+      </section>
+    )}
+
+    {mentions.length > 0 && (
+      <section class="webmentions-mentions">
+        <h3 class="webmentions-heading">
+          {mentions.length} {mentions.length === 1 ? 'Mention' : 'Mentions'}
+        </h3>
+        <ul class="webmentions-list">
+          {mentions.map((wm) => (
+            <li class="webmention-item">
+              {wm.authorUrl
+                ? <a href={wm.authorUrl}>{wm.authorName || 'Someone'}</a>
+                : <span>{wm.authorName || 'Someone'}</span>
+              }
+              {' mentioned this on '}
+              <a href={wm.source}>{wm.source}</a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+  </div>
+)}

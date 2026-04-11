@@ -1,0 +1,170 @@
+---
+/**
+ * Renders an h-card microformats2 identity card.
+ *
+ * Uses `buildHCard` from indieweb-core to generate the correct
+ * mf2 class names and properties.
+ *
+ * @example
+ * ```astro
+ * <HCard
+ *   name="Courtney Robertson"
+ *   url="https://courtneyr.dev"
+ *   photo="https://courtneyr.dev/photo.jpg"
+ *   org="Open Source Together"
+ *   locality="Portland"
+ *   region="OR"
+ *   countryName="US"
+ * />
+ * ```
+ */
+import { buildHCard } from '@opensourcetogether/indieweb-core/mf2';
+import type { HCardData } from '@opensourcetogether/indieweb-core/mf2';
+
+interface Props extends HCardData {
+  /** HTML element for the root container */
+  as?: 'div' | 'aside' | 'section' | 'footer' | 'span';
+  /** Additional CSS class(es) on the root element */
+  class?: string;
+  /** Render as a compact inline card (name + photo only) */
+  compact?: boolean;
+}
+
+const {
+  as: Tag = 'div',
+  class: className,
+  compact = false,
+  name,
+  givenName,
+  familyName,
+  additionalName,
+  honorificPrefix,
+  honorificSuffix,
+  nickname,
+  url,
+  photo,
+  logo,
+  email,
+  tel,
+  note,
+  org,
+  jobTitle,
+  role,
+  locality,
+  region,
+  postalCode,
+  countryName,
+  streetAddress,
+  category,
+  latitude,
+  longitude,
+} = Astro.props;
+
+const card = buildHCard({
+  name,
+  givenName,
+  familyName,
+  additionalName,
+  honorificPrefix,
+  honorificSuffix,
+  nickname,
+  url,
+  photo,
+  logo,
+  email,
+  tel,
+  note,
+  org,
+  jobTitle,
+  role,
+  locality,
+  region,
+  postalCode,
+  countryName,
+  streetAddress,
+  category,
+  latitude,
+  longitude,
+});
+
+const rootClass = [card.rootClassName, className].filter(Boolean).join(' ');
+const p = card.properties;
+---
+
+<Tag class={rootClass}>
+  {p.photo && (
+    <img class={p.photo.className} src={p.photo.attributes?.src} alt={name ?? ''} />
+  )}
+
+  {compact ? (
+    p.url
+      ? <a class={`${p.name?.className ?? ''} ${p.url.className}`} href={p.url.attributes?.href}>{p.name?.value}</a>
+      : p.name && <span class={p.name.className}>{p.name.value}</span>
+  ) : (
+    <>
+      {p.honorificPrefix && (
+        <span class={p.honorificPrefix.className}>{p.honorificPrefix.value}</span>
+      )}
+
+      {p.url && p.name ? (
+        <a class={p.url.className} href={p.url.attributes?.href}>
+          <span class={p.name.className}>{p.name.value}</span>
+        </a>
+      ) : (
+        p.name && <span class={p.name.className}>{p.name.value}</span>
+      )}
+
+      {p.honorificSuffix && (
+        <span class={p.honorificSuffix.className}>{p.honorificSuffix.value}</span>
+      )}
+
+      {p.nickname && (
+        <span class={p.nickname.className}>({p.nickname.value})</span>
+      )}
+
+      {p.jobTitle && (
+        <span class={p.jobTitle.className}>{p.jobTitle.value}</span>
+      )}
+
+      {p.role && (
+        <span class={p.role.className}>{p.role.value}</span>
+      )}
+
+      {p.org && (
+        <span class={p.org.className}>{p.org.value}</span>
+      )}
+
+      {p.email && (
+        <a class={p.email.className} href={p.email.attributes?.href}>{p.email.value}</a>
+      )}
+
+      {p.tel && (
+        <span class={p.tel.className}>{p.tel.value}</span>
+      )}
+
+      {(p.locality || p.region || p.countryName || p.streetAddress) && (
+        <span class="p-adr h-adr">
+          {p.streetAddress && <span class={p.streetAddress.className}>{p.streetAddress.value}</span>}
+          {p.locality && <span class={p.locality.className}>{p.locality.value}</span>}
+          {p.region && <span class={p.region.className}>{p.region.value}</span>}
+          {p.postalCode && <span class={p.postalCode.className}>{p.postalCode.value}</span>}
+          {p.countryName && <span class={p.countryName.className}>{p.countryName.value}</span>}
+        </span>
+      )}
+
+      {p.note && (
+        <p class={p.note.className}>{p.note.value}</p>
+      )}
+
+      {p.logo && (
+        <img class={p.logo.className} src={p.logo.attributes?.src} alt="" />
+      )}
+
+      {p.category?.map((cat) => (
+        <span class={cat.className}>{cat.value}</span>
+      ))}
+
+      <slot />
+    </>
+  )}
+</Tag>

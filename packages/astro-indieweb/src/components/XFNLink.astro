@@ -1,0 +1,52 @@
+---
+/**
+ * Anchor tag with XFN rel attributes.
+ *
+ * Validates the relationship combination and builds the correct
+ * `rel` attribute string using indieweb-core's XFN utilities.
+ *
+ * @example
+ * ```astro
+ * <XFNLink href="https://alice.dev" relationships={['friend', 'met']}>
+ *   Alice
+ * </XFNLink>
+ * <!-- Renders: <a href="https://alice.dev" rel="friend met">Alice</a> -->
+ * ```
+ */
+import { buildRelAttribute, validateXfnRelationships } from '@opensourcetogether/indieweb-core/xfn';
+
+interface Props {
+  /** Link target URL */
+  href: string;
+  /** XFN relationship values */
+  relationships: string[];
+  /** Additional non-XFN rel values (e.g. noopener) */
+  otherRel?: string[];
+  /** Additional CSS class(es) */
+  class?: string;
+  /** Open in new tab */
+  target?: string;
+}
+
+const {
+  href,
+  relationships,
+  otherRel = [],
+  class: className,
+  target,
+} = Astro.props;
+
+// Validate in dev — warn but still render
+if (import.meta.env.DEV) {
+  const validation = validateXfnRelationships(relationships);
+  if (!validation.valid) {
+    console.warn(`[XFNLink] ${href}: ${validation.warnings.join('; ')}`);
+  }
+}
+
+const rel = buildRelAttribute(relationships, otherRel);
+---
+
+<a href={href} rel={rel} class={className} target={target}>
+  <slot />
+</a>

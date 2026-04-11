@@ -6,6 +6,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./components": "./src/components/index.ts",
+    "./components/HEntry.astro": "./src/components/HEntry.astro",
+    "./components/HCard.astro": "./src/components/HCard.astro",
+    "./components/HFeed.astro": "./src/components/HFeed.astro",
+    "./components/XFNLink.astro": "./src/components/XFNLink.astro",
+    "./components/RelMe.astro": "./src/components/RelMe.astro",
+    "./components/IndieWebHead.astro": "./src/components/IndieWebHead.astro",
+    "./components/Webmentions.astro": "./src/components/Webmentions.astro",
     "./routes": "./src/routes/index.ts"
   },
   "scripts": {
