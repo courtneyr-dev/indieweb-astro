@@ -23,7 +23,7 @@
     "@opensourcetogether/indieweb-core": "workspace:*"
   },
   "peerDependencies": {
-    "emdash": "^0.1.0"
+    "emdash": ">=0.29.0 <1"
   },
   "devDependencies": {
     "esbuild": "^0.28.0",

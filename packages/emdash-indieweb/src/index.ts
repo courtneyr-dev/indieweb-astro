@@ -69,7 +69,11 @@ export function emdashIndieweb(
     version: "0.1.0",
     format: "standard",
     entrypoint: "@opensourcetogether/emdash-indieweb/sandbox",
-    capabilities: ["read:content", "write:content", "network:fetch:any"],
+    capabilities: [
+      "content:read",
+      "content:write",
+      "network:request:unrestricted",
+    ],
     allowedHosts: ["*"],
     storage: {
       webmentions: {
