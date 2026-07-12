@@ -21,7 +21,6 @@ import {
   extractAuthor,
   extractContent,
   extractRsvpValue,
-  extractLinkedUrls,
 } from "@opensourcetogether/indieweb-core/webmention";
 import type {
   WebmentionRecord,
@@ -91,39 +90,50 @@ function toWebmentionRecord(data: Record<string, unknown>): WebmentionRecord {
   };
 }
 
-function extractTextFromContent(content: Record<string, unknown>): string {
-  // Posts store Portable Text in the `content` field; `body` is kept
-  // as a fallback for collections that use that name instead.
+/**
+ * Collect outbound webmention targets from Portable Text content:
+ * link-annotation hrefs (markDefs) and bare http(s) URLs typed into
+ * span text. `extractLinkedUrls` needs real anchor markup, which
+ * Portable Text doesn't carry — so walk the blocks directly.
+ */
+function extractContentUrls(content: Record<string, unknown>): string[] {
   const body = Array.isArray(content.content) ? content.content : content.body;
-  if (!Array.isArray(body)) return "";
+  if (!Array.isArray(body)) return [];
 
-  const parts: string[] = [];
+  const urls: string[] = [];
+  const push = (candidate: string) => {
+    if (/^https?:\/\//.test(candidate) && !urls.includes(candidate)) {
+      urls.push(candidate);
+    }
+  };
+
   for (const block of body) {
     if (typeof block !== "object" || block === null) continue;
     const b = block as Record<string, unknown>;
 
-    const children = b.children;
-    if (Array.isArray(children)) {
-      for (const child of children) {
-        if (typeof child === "object" && child !== null) {
-          const c = child as Record<string, unknown>;
-          if (typeof c.text === "string") parts.push(c.text);
+    if (Array.isArray(b.markDefs)) {
+      for (const mark of b.markDefs) {
+        if (typeof mark === "object" && mark !== null) {
+          const href = (mark as Record<string, unknown>).href;
+          if (typeof href === "string") push(href);
         }
       }
     }
 
-    const markDefs = b.markDefs;
-    if (Array.isArray(markDefs)) {
-      for (const mark of markDefs) {
-        if (typeof mark === "object" && mark !== null) {
-          const m = mark as Record<string, unknown>;
-          if (typeof m.href === "string") parts.push(` ${m.href} `);
+    if (Array.isArray(b.children)) {
+      for (const child of b.children) {
+        if (typeof child === "object" && child !== null) {
+          const text = (child as Record<string, unknown>).text;
+          if (typeof text !== "string") continue;
+          for (const match of text.matchAll(/https?:\/\/[^\s<>"')\]]+/g)) {
+            push(match[0].replace(/[.,;:!?]+$/, ""));
+          }
         }
       }
     }
   }
 
-  return parts.join(" ");
+  return urls;
 }
 
 // ─── Admin UI (Block Kit) ────────────────────────────────────────────────
@@ -907,9 +917,19 @@ export default {
             }
           }
 
-          if (content.photo || content.photos) mf2Props.photo = ["present"];
-          if (content.video) mf2Props.video = ["present"];
-          if (content.audio) mf2Props.audio = ["present"];
+          // Micropub stores media URLs inside kind_meta (the posts schema
+          // has no top-level photo/video/audio fields), so check both.
+          const detectMeta = (
+            content.kind_meta && typeof content.kind_meta === "object"
+              ? content.kind_meta
+              : {}
+          ) as Record<string, unknown>;
+          if (content.photo || content.photos || detectMeta.photos)
+            mf2Props.photo = ["present"];
+          if (content.video || detectMeta.videos)
+            mf2Props.video = ["present"];
+          if (content.audio || detectMeta.audio)
+            mf2Props.audio = ["present"];
 
           const mf2Item = {
             type: ["h-entry"],
@@ -1051,14 +1071,10 @@ export default {
         // webmention sending, so syndication links land promptly.
         await syndicatePendingTargets(ctx, event, sourceUrl);
 
-        const textContent = extractTextFromContent(event.content);
-
-        // Webmention targets: URLs in the body plus explicit citation
-        // fields (reply/like/repost/bookmark/quotation URLs).
-        const wrappedHtml = `<div>${textContent}</div>`;
-        const targetUrls = textContent.trim()
-          ? extractLinkedUrls(wrappedHtml, sourceUrl)
-          : [];
+        // Webmention targets: link URLs in the Portable Text body
+        // (markDef hrefs + bare URLs in span text) plus explicit
+        // citation fields (reply/like/repost/bookmark/quotation URLs).
+        const targetUrls = extractContentUrls(event.content);
         for (const field of [
           "in_reply_to",
           "like_of",
@@ -1520,7 +1536,20 @@ export default {
           // timeout, 1 MB cap), and awaiting means the work can't be
           // dropped when the isolate finishes the response — plugins
           // have no waitUntil to anchor background work to.
-          await verifyInBackground(ctx, id, source, target);
+          const outcome = await verifyInBackground(ctx, id, source, target);
+
+          // Anti-abuse: a brand-new submission that could not be
+          // verified (unreachable source, non-2xx, no link) must not
+          // leave a row behind — otherwise an unauthenticated caller
+          // can grow storage without bound. Re-submissions of an
+          // existing (previously verified) record keep it.
+          if (outcome !== "verified" && !existing) {
+            await ctx.storage.webmentions.delete(id).catch(() => {});
+            return {
+              error:
+                "Verification failed: source could not be fetched or does not link to target",
+            };
+          }
         }
 
         return { status: "accepted" };
@@ -1877,41 +1906,50 @@ async function readBodyCapped(
   return text + decoder.decode();
 }
 
+/** Outcome of a verification pass, so callers can clean up. */
+type VerifyOutcome = "verified" | "rejected" | "failed";
+
 async function verifyInBackground(
   ctx: PluginContext,
   id: string,
   source: string,
   target: string,
-): Promise<void> {
+): Promise<VerifyOutcome> {
   try {
-    if (!ctx.http) return;
+    if (!ctx.http) return "failed";
 
+    // One timeout budget for fetch AND body read — a slow-drip source
+    // must not hold the request open after headers arrive.
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
       VERIFY_FETCH_TIMEOUT_MS,
     );
     let response: Response;
+    let html: string;
     try {
       response = await ctx.http.fetch(source, {
         headers: { Accept: "text/html" },
         signal: controller.signal,
       });
+
+      if (response.status === 410) {
+        await ctx.storage.webmentions.delete(id);
+        return "rejected";
+      }
+
+      if (response.status < 200 || response.status >= 300) {
+        ctx.log.warn(
+          `Verification failed: source returned ${response.status}`,
+        );
+        return "failed";
+      }
+
+      html = await readBodyCapped(response, MAX_VERIFY_SOURCE_BYTES);
     } finally {
       clearTimeout(timeout);
     }
 
-    if (response.status === 410) {
-      await ctx.storage.webmentions.delete(id);
-      return;
-    }
-
-    if (response.status < 200 || response.status >= 300) {
-      ctx.log.warn(`Verification failed: source returned ${response.status}`);
-      return;
-    }
-
-    const html = await readBodyCapped(response, MAX_VERIFY_SOURCE_BYTES);
     const contentType = response.headers.get("Content-Type") || "text/html";
 
     if (!sourceLinksToTarget(html, target, contentType)) {
@@ -1919,7 +1957,7 @@ async function verifyInBackground(
       ctx.log.info(
         "Deleted unverified webmention: source does not link to target",
       );
-      return;
+      return "rejected";
     }
 
     const entry = simpleParseMf2(html);
@@ -1950,10 +1988,12 @@ async function verifyInBackground(
     ctx.log.info(
       `Verified webmention: ${source} -> ${target} (${displayType})`,
     );
+    return "verified";
   } catch (err) {
     ctx.log.warn(
       `Verification error: ${err instanceof Error ? err.message : String(err)}`,
     );
+    return "failed";
   }
 }
 

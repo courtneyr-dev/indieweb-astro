@@ -89,10 +89,33 @@ export function textToPortableText(text: string): PortableTextBlock[] {
   }));
 }
 
-function firstString(values: unknown[] | undefined): string | undefined {
-  if (!values) return undefined;
-  const first = values.find((v) => typeof v === "string" && v.trim());
+function firstString(values: unknown): string | undefined {
+  // Micropub JSON is attacker-shaped: a property that should be an
+  // array may arrive as a bare string. Normalize instead of throwing.
+  const list = Array.isArray(values)
+    ? values
+    : values !== undefined && values !== null
+      ? [values]
+      : [];
+  const first = list.find((v) => typeof v === "string" && v.trim());
   return typeof first === "string" ? first.trim() : undefined;
+}
+
+/**
+ * Accept a value only if it is a well-formed http(s) URL. Citation
+ * fields are rendered into public `href` attributes, so `javascript:`
+ * and other schemes must never be persisted.
+ */
+function httpUrlOrUndefined(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? value
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function contentToText(
@@ -166,7 +189,13 @@ export function mapMicropubToPostFields(
   if (text) fields.content = textToPortableText(text);
 
   const summary = firstString(props.summary);
-  if (summary) fields.excerpt = summary;
+  if (summary) {
+    fields.excerpt = summary;
+  } else if (!title && text) {
+    // Title-less posts (notes, replies, …): archive/stream views render
+    // title-or-excerpt only, so derive an excerpt from the body text.
+    fields.excerpt = text.length > 180 ? `${text.slice(0, 177)}…` : text;
+  }
 
   const citationMap: Array<[keyof typeof props & string, string]> = [
     ["in-reply-to", "in_reply_to"],
@@ -176,7 +205,9 @@ export function mapMicropubToPostFields(
     ["quotation-of", "quotation_of"],
   ];
   for (const [mf2Key, fieldKey] of citationMap) {
-    const value = firstString(props[mf2Key] as string[] | undefined);
+    const value = httpUrlOrUndefined(
+      firstString(props[mf2Key] as string[] | undefined),
+    );
     if (value) fields[fieldKey] = value;
   }
 
@@ -202,8 +233,10 @@ export function mapMicropubToPostFields(
   const syndicateTo = (props["mp-syndicate-to"] ?? []).filter(
     (t): t is string => typeof t === "string" && t.length > 0,
   );
+  // Syndication URLs render as public u-syndication hrefs — http(s) only.
   const existingSyndication = (props.syndication ?? []).filter(
-    (s): s is string => typeof s === "string" && s.length > 0,
+    (s): s is string =>
+      typeof s === "string" && httpUrlOrUndefined(s) !== undefined,
   );
   if (syndicateTo.length > 0 || existingSyndication.length > 0) {
     fields.syndication = {

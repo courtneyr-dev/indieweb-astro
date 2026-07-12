@@ -46,6 +46,65 @@ describe("mapMicropubToPostFields", () => {
     expect(mapped.slug).toMatch(/^hello-world-\d{14}$/);
   });
 
+  it("derives an excerpt for title-less posts so list views show content", () => {
+    const mapped = mapMicropubToPostFields(
+      createRequest({ content: ["Hello world"] }),
+    );
+    expect(mapped.fields.excerpt).toBe("Hello world");
+  });
+
+  it("truncates derived excerpts to ~180 characters", () => {
+    const long = "word ".repeat(60).trim();
+    const mapped = mapMicropubToPostFields(createRequest({ content: [long] }));
+    expect((mapped.fields.excerpt as string).length).toBeLessThanOrEqual(180);
+    expect(mapped.fields.excerpt as string).toMatch(/…$/);
+  });
+
+  it("does not derive an excerpt when the post has a title", () => {
+    const mapped = mapMicropubToPostFields(
+      createRequest({ name: ["Titled"], content: ["Body"] }),
+    );
+    expect(mapped.fields.excerpt).toBeUndefined();
+  });
+
+  it("rejects non-http(s) citation URLs (stored XSS vector)", () => {
+    const mapped = mapMicropubToPostFields(
+      createRequest({
+        content: ["hi"],
+        // eslint-disable-next-line no-script-url
+        "in-reply-to": ["javascript:alert(1)"],
+        "bookmark-of": ["https://ok.example/post"],
+      }),
+    );
+    expect(mapped.fields.in_reply_to).toBeUndefined();
+    expect(mapped.fields.bookmark_of).toBe("https://ok.example/post");
+  });
+
+  it("filters non-http(s) syndication URLs", () => {
+    const mapped = mapMicropubToPostFields(
+      createRequest({
+        content: ["hi"],
+        syndication: ["https://social.example/@me/1", "data:text/html,x"],
+      }),
+    );
+    const syndication = mapped.fields.syndication as {
+      links: Array<{ url: string }>;
+    };
+    expect(syndication.links).toEqual([
+      { url: "https://social.example/@me/1" },
+    ]);
+  });
+
+  it("tolerates malformed non-array property values without throwing", () => {
+    const mapped = mapMicropubToPostFields(
+      createRequest({
+        name: "title" as unknown as string[],
+        content: ["Body"],
+      }),
+    );
+    expect(mapped.fields.title).toBe("title");
+  });
+
   it("maps an article with a title and no explicit slug", () => {
     const mapped = mapMicropubToPostFields(
       createRequest({

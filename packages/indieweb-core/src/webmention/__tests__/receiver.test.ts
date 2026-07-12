@@ -136,6 +136,11 @@ describe("sourceLinksToTarget", () => {
     expect(sourceLinksToTarget(html, target, "text/html")).toBe(false);
   });
 
+  it("does not treat data-href or other suffixed attributes as links", () => {
+    const html = `<div data-href="${target}" formsrc="${target}" data-srcset="${target} 1x"></div>`;
+    expect(sourceLinksToTarget(html, target, "text/html")).toBe(false);
+  });
+
   it("strips fragment from target before matching", () => {
     const html = `<a href="${target}">Link</a>`;
     expect(sourceLinksToTarget(html, target + "#section", "text/html")).toBe(

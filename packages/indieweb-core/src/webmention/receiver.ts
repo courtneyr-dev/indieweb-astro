@@ -156,76 +156,80 @@ export async function verifyWebmention(
   source: string,
   target: string,
 ): Promise<WebmentionVerification> {
+  // One timeout budget covers the whole fetch INCLUDING the body read —
+  // a slow-drip source can otherwise hold the request open indefinitely
+  // after the headers arrive.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
   let response: Response;
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    response = await fetch(source, {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        Accept:
-          "text/html, application/xhtml+xml, application/json, text/plain",
-      },
-    });
-
-    clearTimeout(timeout);
-  } catch (err) {
-    return {
-      verified: false,
-      source,
-      target,
-      error: `Failed to fetch source: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-
-  // HTTP 410 Gone means the source was deleted
-  if (response.status === 410) {
-    return {
-      verified: false,
-      source,
-      target,
-      gone: true,
-    };
-  }
-
-  // Non-2xx means verification fails
-  if (response.status < 200 || response.status >= 300) {
-    return {
-      verified: false,
-      source,
-      target,
-      error: `Source returned HTTP ${response.status}`,
-    };
-  }
-
-  // Read response body, limited to MAX_SOURCE_SIZE
   let sourceContent: string;
   try {
-    const reader = response.body?.getReader();
-    if (!reader) {
-      sourceContent = await response.text();
-    } else {
-      const chunks: Uint8Array[] = [];
-      let totalBytes = 0;
-
-      while (totalBytes < MAX_SOURCE_SIZE) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        totalBytes += value.byteLength;
-      }
-      reader.cancel();
-
-      const decoder = new TextDecoder();
-      sourceContent = chunks
-        .map((chunk) => decoder.decode(chunk, { stream: true }))
-        .join("");
+    try {
+      response = await fetch(source, {
+        redirect: "follow",
+        signal: controller.signal,
+        headers: {
+          Accept:
+            "text/html, application/xhtml+xml, application/json, text/plain",
+        },
+      });
+    } catch (err) {
+      return {
+        verified: false,
+        source,
+        target,
+        error: `Failed to fetch source: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
-  } catch {
-    sourceContent = "";
+
+    // HTTP 410 Gone means the source was deleted
+    if (response.status === 410) {
+      return {
+        verified: false,
+        source,
+        target,
+        gone: true,
+      };
+    }
+
+    // Non-2xx means verification fails
+    if (response.status < 200 || response.status >= 300) {
+      return {
+        verified: false,
+        source,
+        target,
+        error: `Source returned HTTP ${response.status}`,
+      };
+    }
+
+    // Read response body, limited to MAX_SOURCE_SIZE
+    try {
+      const reader = response.body?.getReader();
+      if (!reader) {
+        sourceContent = await response.text();
+      } else {
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+
+        while (totalBytes < MAX_SOURCE_SIZE) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          totalBytes += value.byteLength;
+        }
+        reader.cancel();
+
+        const decoder = new TextDecoder();
+        sourceContent = chunks
+          .map((chunk) => decoder.decode(chunk, { stream: true }))
+          .join("");
+      }
+    } catch {
+      sourceContent = "";
+    }
+  } finally {
+    clearTimeout(timeout);
   }
 
   // Check if source contains a link to target
@@ -287,15 +291,17 @@ export function sourceLinksToTarget(
  * to the target URL. Per the spec, the URL must be an exact match.
  */
 function htmlLinksToTarget(html: string, target: string): boolean {
-  // Check href and src attributes
-  const attrPattern = /(?:href|src)\s*=\s*["']([^"']*)["']/gi;
+  // Check href and src attributes. The lookbehind rejects attributes
+  // that merely END in href/src (data-href, formsrc, …) so an attacker
+  // cannot fake a "link" with a custom attribute.
+  const attrPattern = /(?<![\w-])(?:href|src)\s*=\s*["']([^"']*)["']/gi;
   let match: RegExpExecArray | null;
   while ((match = attrPattern.exec(html)) !== null) {
     if (match[1] === target) return true;
   }
 
   // Check srcset attribute (contains comma-separated URL + descriptor pairs)
-  const srcsetPattern = /srcset\s*=\s*["']([^"']*)["']/gi;
+  const srcsetPattern = /(?<![\w-])srcset\s*=\s*["']([^"']*)["']/gi;
   while ((match = srcsetPattern.exec(html)) !== null) {
     const entries = match[1].split(",");
     for (const entry of entries) {
