@@ -1,0 +1,29 @@
+{
+  "name": "@opensourcetogether/emdash-content-analysis",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.mts"
+    },
+    "./sandbox": "./dist/sandbox-entry.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts src/sandbox-entry.ts --bundle --format=esm --outdir=dist --out-extension:.js=.mjs --external:emdash",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "emdash": ">=0.29.0 <1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
