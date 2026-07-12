@@ -5,10 +5,7 @@
   "license": "MIT",
   "main": "dist/index.mjs",
   "exports": {
-    ".": {
-      "import": "./dist/index.mjs",
-      "types": "./dist/index.d.mts"
-    },
+    ".": "./dist/index.mjs",
     "./sandbox": "./dist/sandbox-entry.mjs"
   },
   "files": [

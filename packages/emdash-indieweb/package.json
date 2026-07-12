@@ -5,10 +5,7 @@
   "license": "MIT",
   "main": "dist/index.mjs",
   "exports": {
-    ".": {
-      "import": "./dist/index.mjs",
-      "types": "./dist/index.d.mts"
-    },
+    ".": "./dist/index.mjs",
     "./sandbox": "./dist/sandbox-entry.mjs"
   },
   "files": [
@@ -16,7 +13,7 @@
   ],
   "scripts": {
     "build": "esbuild src/index.ts src/sandbox-entry.ts --bundle --format=esm --outdir=dist --out-extension:.js=.mjs --external:emdash",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@opensourcetogether/astro-indieweb": "workspace:*",
