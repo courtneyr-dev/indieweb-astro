@@ -73,11 +73,26 @@ export async function verifyCodeChallenge(
   method: "S256" | "plain",
 ): Promise<boolean> {
   if (method === "plain") {
-    return codeVerifier === codeChallenge;
+    return timingSafeEqual(codeVerifier, codeChallenge);
   }
 
   const computed = await computeS256Challenge(codeVerifier);
-  return computed === codeChallenge;
+  return timingSafeEqual(computed, codeChallenge);
+}
+
+/**
+ * Constant-time string comparison — the loop always covers every
+ * character so equality checks don't leak a match-prefix length
+ * through timing.
+ * @internal
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const length = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < length; i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
 }
 
 /**

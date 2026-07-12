@@ -22,6 +22,7 @@ import {
   generateSecret,
   hashSecret,
   isExpired,
+  validateCodeVerifier,
   verifyCodeChallenge,
 } from "@opensourcetogether/indieweb-core/indieauth";
 import type {
@@ -114,7 +115,10 @@ export async function redeemAuthorizationCode(
   ctx: PluginContext,
   input: RedeemCodeInput,
 ): Promise<TokenResponseBody | ProfileResponseBody | OAuthErrorBody> {
-  if (input.grantType && input.grantType !== "authorization_code") {
+  if (!input.grantType) {
+    return oauthError("invalid_request", "grant_type is required");
+  }
+  if (input.grantType !== "authorization_code") {
     return oauthError(
       "unsupported_grant_type",
       `grant_type must be "authorization_code"`,
@@ -129,14 +133,27 @@ export async function redeemAuthorizationCode(
   if (!input.codeVerifier) {
     return oauthError("invalid_request", "code_verifier is required (PKCE)");
   }
+  const verifierCheck = validateCodeVerifier(input.codeVerifier);
+  if (!verifierCheck.valid) {
+    return oauthError(
+      "invalid_request",
+      verifierCheck.error ?? "invalid code_verifier",
+    );
+  }
 
   const codeHash = await hashSecret(input.code);
   const stored = await ctx.storage.indieauth_codes.get(codeHash);
   if (!stored) {
     return oauthError("invalid_grant", "authorization code is invalid");
   }
-  // Single use: delete before validation so a failed attempt also burns it.
-  await ctx.storage.indieauth_codes.delete(codeHash);
+  // Single use: the delete is the atomic consume — the storage layer's
+  // DELETE reports whether a row was actually removed, so of two
+  // concurrent redemptions only one proceeds. Deleting before
+  // validation also burns the code on a failed attempt.
+  const consumed = await ctx.storage.indieauth_codes.delete(codeHash);
+  if (!consumed) {
+    return oauthError("invalid_grant", "authorization code is invalid");
+  }
 
   const record = stored as unknown as AuthorizationCodeRecord;
   if (isExpired(record.expiresAt)) {

@@ -88,7 +88,8 @@ export function isAuthorizationServerError(
  * Validate an incoming IndieAuth authorization request.
  *
  * Enforces:
- * - `response_type=code` (or absent, treated as code for legacy clients)
+ * - `response_type=code` (required — OAuth 2.0 makes response_type
+ *   mandatory; pre-spec IndieAuth clients that omit it are rejected)
  * - `client_id` is a valid http(s) URL (via {@link validateClientId})
  * - `redirect_uri` shares scheme+host+port with `client_id` (no client
  *   metadata fetch is performed, so cross-origin redirect URIs are rejected)
@@ -106,7 +107,13 @@ export function isAuthorizationServerError(
 export function validateAuthorizationRequest(
   params: Record<string, string | undefined>,
 ): ValidatedAuthorizationRequest | AuthorizationServerError {
-  const responseType = params.response_type ?? "code";
+  const responseType = params.response_type;
+  if (!responseType) {
+    return {
+      error: "invalid_request",
+      error_description: "response_type is required",
+    };
+  }
   if (responseType !== "code") {
     return {
       error: "unsupported_response_type",

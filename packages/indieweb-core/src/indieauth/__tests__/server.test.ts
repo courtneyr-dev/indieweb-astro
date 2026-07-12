@@ -30,10 +30,10 @@ describe("validateAuthorizationRequest", () => {
     }
   });
 
-  it("treats a missing response_type as code", () => {
+  it("rejects a missing response_type", () => {
     const { response_type: _drop, ...params } = VALID_PARAMS;
     const result = validateAuthorizationRequest(params);
-    expect(isAuthorizationServerError(result)).toBe(false);
+    expect(result).toMatchObject({ error: "invalid_request" });
   });
 
   it("rejects non-code response types", () => {

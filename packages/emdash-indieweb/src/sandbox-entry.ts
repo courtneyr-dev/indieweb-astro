@@ -70,6 +70,11 @@ async function getSiteUrl(ctx: PluginContext): Promise<string> {
   return kvUrl || ctx.site.url;
 }
 
+/** Narrow an untrusted route-input value to a string, else undefined. */
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 function toWebmentionRecord(data: Record<string, unknown>): WebmentionRecord {
   return {
     source: data.source as string,
@@ -87,7 +92,9 @@ function toWebmentionRecord(data: Record<string, unknown>): WebmentionRecord {
 }
 
 function extractTextFromContent(content: Record<string, unknown>): string {
-  const body = content.body;
+  // Posts store Portable Text in the `content` field; `body` is kept
+  // as a fallback for collections that use that name instead.
+  const body = Array.isArray(content.content) ? content.content : content.body;
   if (!Array.isArray(body)) return "";
 
   const parts: string[] = [];
@@ -855,12 +862,12 @@ async function reverifyWebmention(
   target: string,
 ) {
   if (ctx.http) {
-    void verifyInBackground(ctx, wmId, source, target);
+    await verifyInBackground(ctx, wmId, source, target);
   }
   return {
     ...(await buildWebmentionsPage(ctx)),
     toast: {
-      message: "Re-verification started",
+      message: "Re-verification finished",
       type: "success" as const,
     },
   };
@@ -1457,15 +1464,19 @@ export default {
           };
         }
 
-        const source = input.source as string;
-        const target = input.target as string;
+        const source =
+          typeof input.source === "string" ? input.source : "";
+        const target =
+          typeof input.target === "string" ? input.target : "";
 
-        // Accepted target domains: configured site URL, plus the
-        // request origin forwarded by the site's wire route (keeps
-        // local dev working before a site URL is configured).
+        // Accepted target domains: configured site URL plus the host
+        // this route was actually served on (keeps local dev working
+        // before a site URL is configured). Never trust a caller-
+        // supplied origin — the route is publicly dispatchable, so a
+        // body field could name any domain.
         const siteUrl = await getSiteUrl(ctx);
         const acceptedDomains: string[] = [];
-        for (const candidate of [siteUrl, input.origin as string | undefined]) {
+        for (const candidate of [siteUrl, request.url]) {
           if (!candidate) continue;
           try {
             const host = new URL(candidate).hostname;
@@ -1478,29 +1489,38 @@ export default {
         }
 
         const validation = validateWebmention(
-          source || "",
-          target || "",
+          source,
+          target,
           acceptedDomains,
         );
         if (!validation.valid) return { error: validation.error };
 
         const id = `${encodeURIComponent(source)}::${encodeURIComponent(target)}`;
 
-        const record: WebmentionRecord = {
-          source,
-          target,
-          verified: false,
-          type: "mention",
-          receivedAt: new Date().toISOString(),
-        };
-
-        await ctx.storage.webmentions.put(
-          id,
-          record as unknown as Record<string, unknown>,
-        );
+        // Re-submissions: keep the last verified record until the
+        // fresh verification succeeds (or proves the link is gone) —
+        // don't downgrade it to "pending" first.
+        const existing = await ctx.storage.webmentions.get(id);
+        if (!existing) {
+          const record: WebmentionRecord = {
+            source,
+            target,
+            verified: false,
+            type: "mention",
+            receivedAt: new Date().toISOString(),
+          };
+          await ctx.storage.webmentions.put(
+            id,
+            record as unknown as Record<string, unknown>,
+          );
+        }
 
         if (ctx.http) {
-          void verifyInBackground(ctx, id, source, target);
+          // Verified before responding: the fetch is bounded (10s
+          // timeout, 1 MB cap), and awaiting means the work can't be
+          // dropped when the isolate finishes the response — plugins
+          // have no waitUntil to anchor background work to.
+          await verifyInBackground(ctx, id, source, target);
         }
 
         return { status: "accepted" };
@@ -1550,11 +1570,11 @@ export default {
       ) => {
         const input = routeCtx.input ?? {};
         return redeemAuthorizationCode(ctx, {
-          grantType: input.grantType as string | undefined,
-          code: input.code as string | undefined,
-          clientId: input.clientId as string | undefined,
-          redirectUri: input.redirectUri as string | undefined,
-          codeVerifier: input.codeVerifier as string | undefined,
+          grantType: asString(input.grantType),
+          code: asString(input.code),
+          clientId: asString(input.clientId),
+          redirectUri: asString(input.redirectUri),
+          codeVerifier: asString(input.codeVerifier),
           flow: input.flow === "profile" ? "profile" : "token",
         });
       },
@@ -1570,8 +1590,8 @@ export default {
         const input = routeCtx.input ?? {};
         return verifyAccessToken(
           ctx,
-          input.token as string | undefined,
-          input.requiredScope as string | undefined,
+          asString(input.token),
+          asString(input.requiredScope),
         );
       },
     },
@@ -1584,7 +1604,7 @@ export default {
         ctx: PluginContext,
       ) => {
         const input = routeCtx.input ?? {};
-        return revokeAccessToken(ctx, input.token as string | undefined);
+        return revokeAccessToken(ctx, asString(input.token));
       },
     },
 
@@ -1740,9 +1760,10 @@ interface SyndicationState {
  *
  * The post page must render (invisible) anchors to each pending target
  * for Bridgy to accept the webmention — the site's post template does
- * this from `syndication.targets`. Processed targets are removed
- * whether they succeed or fail, so saves never retry forever;
- * failures are logged and can be retried by re-adding the target.
+ * this from `syndication.targets`. Successful targets move to
+ * `syndication.links`; failed Bridgy targets stay pending so the next
+ * save retries them (syndication only runs on save, so this cannot
+ * loop). Non-Bridgy targets are dropped with a warning.
  */
 async function syndicatePendingTargets(
   ctx: PluginContext,
@@ -1765,11 +1786,12 @@ async function syndicatePendingTargets(
   }
 
   const links = Array.isArray(state.links) ? [...state.links] : [];
+  const stillPending: string[] = [];
 
   for (const targetUid of pending) {
     if (!isBridgyPublishTarget(targetUid)) {
       ctx.log.warn(
-        `Skipping non-Bridgy syndication target (direct silo APIs are not supported): ${targetUid}`,
+        `Dropping non-Bridgy syndication target (direct silo APIs are not supported): ${targetUid}`,
       );
       continue;
     }
@@ -1795,13 +1817,15 @@ async function syndicatePendingTargets(
         });
         ctx.log.info(`Syndicated ${sourceUrl} -> ${result.url}`);
       } else {
+        stillPending.push(targetUid);
         ctx.log.warn(
-          `Bridgy publish failed for ${targetUid}: ${result.error}`,
+          `Bridgy publish failed for ${targetUid} (will retry on next save): ${result.error}`,
         );
       }
     } catch (err) {
+      stillPending.push(targetUid);
       ctx.log.warn(
-        `Bridgy publish error for ${targetUid}: ${err instanceof Error ? err.message : String(err)}`,
+        `Bridgy publish error for ${targetUid} (will retry on next save): ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -1815,7 +1839,7 @@ async function syndicatePendingTargets(
   }
   try {
     await ctx.content.update(event.collection, entryId, {
-      syndication: { targets: [], links },
+      syndication: { targets: stillPending, links },
     });
   } catch (err) {
     ctx.log.warn(
@@ -1826,6 +1850,33 @@ async function syndicatePendingTargets(
 
 // ─── Background Verification ─────────────────────────────────────────────
 
+/** Maximum source size read during verification (1 MB per spec guidance). */
+const MAX_VERIFY_SOURCE_BYTES = 1_048_576;
+
+/** Maximum time to wait for the source fetch. */
+const VERIFY_FETCH_TIMEOUT_MS = 10_000;
+
+/** Read a response body as text, stopping after `maxBytes`. */
+async function readBodyCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return response.text();
+
+  const decoder = new TextDecoder();
+  let text = "";
+  let total = 0;
+  while (total < maxBytes) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+  }
+  await reader.cancel().catch(() => {});
+  return text + decoder.decode();
+}
+
 async function verifyInBackground(
   ctx: PluginContext,
   id: string,
@@ -1835,9 +1886,20 @@ async function verifyInBackground(
   try {
     if (!ctx.http) return;
 
-    const response = await ctx.http.fetch(source, {
-      headers: { Accept: "text/html" },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      VERIFY_FETCH_TIMEOUT_MS,
+    );
+    let response: Response;
+    try {
+      response = await ctx.http.fetch(source, {
+        headers: { Accept: "text/html" },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (response.status === 410) {
       await ctx.storage.webmentions.delete(id);
@@ -1849,7 +1911,7 @@ async function verifyInBackground(
       return;
     }
 
-    const html = await response.text();
+    const html = await readBodyCapped(response, MAX_VERIFY_SOURCE_BYTES);
     const contentType = response.headers.get("Content-Type") || "text/html";
 
     if (!sourceLinksToTarget(html, target, contentType)) {
