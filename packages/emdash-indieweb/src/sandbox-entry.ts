@@ -102,7 +102,8 @@ function extractContentUrls(content: Record<string, unknown>): string[] {
 
   const urls: string[] = [];
   const push = (candidate: string) => {
-    if (/^https?:\/\//.test(candidate) && !urls.includes(candidate)) {
+    // URL schemes are case-insensitive (RFC 3986 §3.1).
+    if (/^https?:\/\//i.test(candidate) && !urls.includes(candidate)) {
       urls.push(candidate);
     }
   };
@@ -125,7 +126,7 @@ function extractContentUrls(content: Record<string, unknown>): string[] {
         if (typeof child === "object" && child !== null) {
           const text = (child as Record<string, unknown>).text;
           if (typeof text !== "string") continue;
-          for (const match of text.matchAll(/https?:\/\/[^\s<>"')\]]+/g)) {
+          for (const match of text.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
             push(match[0].replace(/[.,;:!?]+$/, ""));
           }
         }
@@ -919,16 +920,24 @@ export default {
 
           // Micropub stores media URLs inside kind_meta (the posts schema
           // has no top-level photo/video/audio fields), so check both.
+          // An empty array is NOT media — only non-empty strings/arrays count.
+          const hasMedia = (v: unknown): boolean =>
+            (typeof v === "string" && v.length > 0) ||
+            (Array.isArray(v) && v.length > 0);
           const detectMeta = (
             content.kind_meta && typeof content.kind_meta === "object"
               ? content.kind_meta
               : {}
           ) as Record<string, unknown>;
-          if (content.photo || content.photos || detectMeta.photos)
+          if (
+            hasMedia(content.photo) ||
+            hasMedia(content.photos) ||
+            hasMedia(detectMeta.photos)
+          )
             mf2Props.photo = ["present"];
-          if (content.video || detectMeta.videos)
+          if (hasMedia(content.video) || hasMedia(detectMeta.videos))
             mf2Props.video = ["present"];
-          if (content.audio || detectMeta.audio)
+          if (hasMedia(content.audio) || hasMedia(detectMeta.audio))
             mf2Props.audio = ["present"];
 
           const mf2Item = {
@@ -1513,10 +1522,23 @@ export default {
 
         const id = `${encodeURIComponent(source)}::${encodeURIComponent(target)}`;
 
+        // Anti-abuse: never persist a row we cannot verify. Without
+        // fetch capability there is no verification path at all, so an
+        // unauthenticated caller could grow storage without bound.
+        if (!ctx.http) {
+          ctx.log.warn(
+            "Webmention received but plugin has no HTTP capability; not stored",
+          );
+          return { error: "Webmention verification unavailable" };
+        }
+
         // Re-submissions: keep the last verified record until the
         // fresh verification succeeds (or proves the link is gone) —
         // don't downgrade it to "pending" first.
-        const existing = await ctx.storage.webmentions.get(id);
+        const existing = (await ctx.storage.webmentions.get(id)) as
+          | (Record<string, unknown> & { verified?: boolean })
+          | null;
+        const hadVerified = existing?.verified === true;
         if (!existing) {
           const record: WebmentionRecord = {
             source,
@@ -1531,25 +1553,22 @@ export default {
           );
         }
 
-        if (ctx.http) {
-          // Verified before responding: the fetch is bounded (10s
-          // timeout, 1 MB cap), and awaiting means the work can't be
-          // dropped when the isolate finishes the response — plugins
-          // have no waitUntil to anchor background work to.
-          const outcome = await verifyInBackground(ctx, id, source, target);
+        // Verified before responding: the fetch is bounded (10s
+        // timeout, 1 MB cap), and awaiting means the work can't be
+        // dropped when the isolate finishes the response — plugins
+        // have no waitUntil to anchor background work to.
+        const outcome = await verifyInBackground(ctx, id, source, target);
 
-          // Anti-abuse: a brand-new submission that could not be
-          // verified (unreachable source, non-2xx, no link) must not
-          // leave a row behind — otherwise an unauthenticated caller
-          // can grow storage without bound. Re-submissions of an
-          // existing (previously verified) record keep it.
-          if (outcome !== "verified" && !existing) {
-            await ctx.storage.webmentions.delete(id).catch(() => {});
-            return {
-              error:
-                "Verification failed: source could not be fetched or does not link to target",
-            };
-          }
+        // A submission that could not be verified (unreachable source,
+        // non-2xx, no link) must not leave an unverified row behind.
+        // Only a previously *verified* record survives a failed
+        // re-verification (transient failures must not delete it).
+        if (outcome !== "verified" && !hadVerified) {
+          await ctx.storage.webmentions.delete(id).catch(() => {});
+          return {
+            error:
+              "Verification failed: source could not be fetched or does not link to target",
+          };
         }
 
         return { status: "accepted" };
