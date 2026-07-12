@@ -1,5 +1,5 @@
 {
-  "name": "@opensourcetogether/emdash-indieweb",
+  "name": "@opensourcetogether/emdash-content-analysis",
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
@@ -13,18 +13,13 @@
   ],
   "scripts": {
     "build": "esbuild src/index.ts src/sandbox-entry.ts --bundle --format=esm --outdir=dist --out-extension:.js=.mjs --external:emdash",
-    "test": "vitest run --passWithNoTests"
-  },
-  "dependencies": {
-    "@opensourcetogether/astro-indieweb": "workspace:*",
-    "@opensourcetogether/indieweb-core": "workspace:*"
+    "test": "vitest run"
   },
   "peerDependencies": {
     "emdash": ">=0.29.0 <1"
   },
   "devDependencies": {
     "esbuild": "^0.28.0",
-    "tsdown": "^0.21.7",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

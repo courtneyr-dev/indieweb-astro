@@ -111,3 +111,12 @@ export interface POSSEConfig {
   /** Whether to auto-syndicate new published posts */
   autoSyndicate?: boolean;
 }
+
+// Bridgy Publish execution helpers
+export {
+  BRIDGY_WEBMENTION_ENDPOINT,
+  BRIDGY_SILOS,
+  isBridgyPublishTarget,
+  parseBridgyResponse,
+} from "./bridgy.js";
+export type { BridgyPublishResult } from "./bridgy.js";

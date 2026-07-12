@@ -21,7 +21,6 @@ import {
   extractAuthor,
   extractContent,
   extractRsvpValue,
-  extractLinkedUrls,
 } from "@opensourcetogether/indieweb-core/webmention";
 import type {
   WebmentionRecord,
@@ -38,6 +37,21 @@ import {
   buildRelAttribute,
 } from "@opensourcetogether/indieweb-core/xfn";
 import type { SyndicationTarget } from "@opensourcetogether/indieweb-core/posse";
+import {
+  BRIDGY_WEBMENTION_ENDPOINT,
+  isBridgyPublishTarget,
+  parseBridgyResponse,
+} from "@opensourcetogether/indieweb-core/posse";
+import {
+  issueAuthorizationCode,
+  redeemAuthorizationCode,
+  verifyAccessToken,
+  revokeAccessToken,
+} from "./indieauth-routes.js";
+import type {
+  IssueCodeInput,
+  RedeemCodeInput,
+} from "./indieauth-routes.js";
 import { buildApiCredentialsPage, saveApiCredentials } from "./api-admin.js";
 import {
   lookupMusic,
@@ -53,6 +67,11 @@ import {
 async function getSiteUrl(ctx: PluginContext): Promise<string> {
   const kvUrl = await ctx.kv.get<string>("settings:siteUrl");
   return kvUrl || ctx.site.url;
+}
+
+/** Narrow an untrusted route-input value to a string, else undefined. */
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 function toWebmentionRecord(data: Record<string, unknown>): WebmentionRecord {
@@ -71,37 +90,51 @@ function toWebmentionRecord(data: Record<string, unknown>): WebmentionRecord {
   };
 }
 
-function extractTextFromContent(content: Record<string, unknown>): string {
-  const body = content.body;
-  if (!Array.isArray(body)) return "";
+/**
+ * Collect outbound webmention targets from Portable Text content:
+ * link-annotation hrefs (markDefs) and bare http(s) URLs typed into
+ * span text. `extractLinkedUrls` needs real anchor markup, which
+ * Portable Text doesn't carry — so walk the blocks directly.
+ */
+function extractContentUrls(content: Record<string, unknown>): string[] {
+  const body = Array.isArray(content.content) ? content.content : content.body;
+  if (!Array.isArray(body)) return [];
 
-  const parts: string[] = [];
+  const urls: string[] = [];
+  const push = (candidate: string) => {
+    // URL schemes are case-insensitive (RFC 3986 §3.1).
+    if (/^https?:\/\//i.test(candidate) && !urls.includes(candidate)) {
+      urls.push(candidate);
+    }
+  };
+
   for (const block of body) {
     if (typeof block !== "object" || block === null) continue;
     const b = block as Record<string, unknown>;
 
-    const children = b.children;
-    if (Array.isArray(children)) {
-      for (const child of children) {
-        if (typeof child === "object" && child !== null) {
-          const c = child as Record<string, unknown>;
-          if (typeof c.text === "string") parts.push(c.text);
+    if (Array.isArray(b.markDefs)) {
+      for (const mark of b.markDefs) {
+        if (typeof mark === "object" && mark !== null) {
+          const href = (mark as Record<string, unknown>).href;
+          if (typeof href === "string") push(href);
         }
       }
     }
 
-    const markDefs = b.markDefs;
-    if (Array.isArray(markDefs)) {
-      for (const mark of markDefs) {
-        if (typeof mark === "object" && mark !== null) {
-          const m = mark as Record<string, unknown>;
-          if (typeof m.href === "string") parts.push(` ${m.href} `);
+    if (Array.isArray(b.children)) {
+      for (const child of b.children) {
+        if (typeof child === "object" && child !== null) {
+          const text = (child as Record<string, unknown>).text;
+          if (typeof text !== "string") continue;
+          for (const match of text.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+            push(match[0].replace(/[.,;:!?]+$/, ""));
+          }
         }
       }
     }
   }
 
-  return parts.join(" ");
+  return urls;
 }
 
 // ─── Admin UI (Block Kit) ────────────────────────────────────────────────
@@ -840,12 +873,12 @@ async function reverifyWebmention(
   target: string,
 ) {
   if (ctx.http) {
-    void verifyInBackground(ctx, wmId, source, target);
+    await verifyInBackground(ctx, wmId, source, target);
   }
   return {
     ...(await buildWebmentionsPage(ctx)),
     toast: {
-      message: "Re-verification started",
+      message: "Re-verification finished",
       type: "success" as const,
     },
   };
@@ -866,10 +899,11 @@ export default {
         if (!content.kind) {
           const mf2Props: Record<string, string[]> = {};
           const propMappings: Array<[string, string]> = [
-            ["inReplyTo", "in-reply-to"],
-            ["likeOf", "like-of"],
-            ["repostOf", "repost-of"],
-            ["bookmarkOf", "bookmark-of"],
+            ["in_reply_to", "in-reply-to"],
+            ["like_of", "like-of"],
+            ["repost_of", "repost-of"],
+            ["bookmark_of", "bookmark-of"],
+            ["quotation_of", "quotation-of"],
             ["rsvp", "rsvp"],
           ];
 
@@ -884,9 +918,27 @@ export default {
             }
           }
 
-          if (content.photo || content.photos) mf2Props.photo = ["present"];
-          if (content.video) mf2Props.video = ["present"];
-          if (content.audio) mf2Props.audio = ["present"];
+          // Micropub stores media URLs inside kind_meta (the posts schema
+          // has no top-level photo/video/audio fields), so check both.
+          // An empty array is NOT media — only non-empty strings/arrays count.
+          const hasMedia = (v: unknown): boolean =>
+            (typeof v === "string" && v.length > 0) ||
+            (Array.isArray(v) && v.length > 0);
+          const detectMeta = (
+            content.kind_meta && typeof content.kind_meta === "object"
+              ? content.kind_meta
+              : {}
+          ) as Record<string, unknown>;
+          if (
+            hasMedia(content.photo) ||
+            hasMedia(content.photos) ||
+            hasMedia(detectMeta.photos)
+          )
+            mf2Props.photo = ["present"];
+          if (hasMedia(content.video) || hasMedia(detectMeta.videos))
+            mf2Props.video = ["present"];
+          if (hasMedia(content.audio) || hasMedia(detectMeta.audio))
+            mf2Props.audio = ["present"];
 
           const mf2Item = {
             type: ["h-entry"],
@@ -906,12 +958,18 @@ export default {
           }
         }
 
-        // Enrich metadata from external APIs when lookupQuery is present
-        // but enriched metadata hasn't been stored yet
+        // Enrich metadata from external APIs when kind_meta.lookupQuery is
+        // present but enriched metadata hasn't been stored yet. All lifelog
+        // metadata lives inside the kind_meta JSON field so the posts schema
+        // stays small (the schema rejects unknown top-level fields).
         const kind = content.kind as string | undefined;
-        const lookupQuery = content.lookupQuery as string | undefined;
-        if (!kind || !lookupQuery || content.lookupEnriched || !ctx.http)
-          return;
+        const meta = (
+          content.kind_meta && typeof content.kind_meta === "object"
+            ? content.kind_meta
+            : {}
+        ) as Record<string, unknown>;
+        const lookupQuery = meta.lookupQuery as string | undefined;
+        if (!kind || !lookupQuery || meta.lookupEnriched || !ctx.http) return;
 
         try {
           const kindToLookup: Record<string, string> = {
@@ -940,7 +998,7 @@ export default {
               results = await lookupBook(
                 ctx,
                 lookupQuery,
-                content.isbn as string | undefined,
+                meta.isbn as string | undefined,
               );
               break;
             case "game":
@@ -953,41 +1011,40 @@ export default {
 
           if (results && results.length > 0) {
             const best = results[0];
-            content.lookupEnriched = true;
-            content.lookupSource = best.source;
-            content.lookupSourceId = best.sourceId;
-            content.lookupMeta = best.meta;
+            meta.lookupEnriched = true;
+            meta.lookupSource = best.source;
+            meta.lookupSourceId = best.sourceId;
+            meta.lookupMeta = best.meta;
 
-            // Map enriched fields to kind-specific content fields
+            // Map enriched fields to kind-specific metadata keys
             if (lookupType === "music" && best.meta) {
-              content.listenTrack = content.listenTrack || best.title;
-              content.listenArtist = content.listenArtist || best.meta.artist;
-              content.listenAlbum = content.listenAlbum || best.meta.album;
-              content.listenMbid = content.listenMbid || best.meta.mbid;
+              meta.listenTrack = meta.listenTrack || best.title;
+              meta.listenArtist = meta.listenArtist || best.meta.artist;
+              meta.listenAlbum = meta.listenAlbum || best.meta.album;
+              meta.listenMbid = meta.listenMbid || best.meta.mbid;
             } else if (lookupType === "video" && best.meta) {
-              content.watchTitle = content.watchTitle || best.title;
-              content.watchYear = content.watchYear || best.year;
-              content.watchPoster = content.watchPoster || best.image;
-              content.watchTmdbId = content.watchTmdbId || best.meta.tmdbId;
-              content.watchMediaType =
-                content.watchMediaType || best.meta.mediaType;
+              meta.watchTitle = meta.watchTitle || best.title;
+              meta.watchYear = meta.watchYear || best.year;
+              meta.watchPoster = meta.watchPoster || best.image;
+              meta.watchTmdbId = meta.watchTmdbId || best.meta.tmdbId;
+              meta.watchMediaType = meta.watchMediaType || best.meta.mediaType;
             } else if (lookupType === "book" && best.meta) {
-              content.readTitle = content.readTitle || best.title;
-              content.readAuthor = content.readAuthor || best.meta.author;
-              content.readIsbn = content.readIsbn || best.meta.isbn;
-              content.readCover = content.readCover || best.image;
+              meta.readTitle = meta.readTitle || best.title;
+              meta.readAuthor = meta.readAuthor || best.meta.author;
+              meta.readIsbn = meta.readIsbn || best.meta.isbn;
+              meta.readCover = meta.readCover || best.image;
             } else if (lookupType === "game") {
-              content.playTitle = content.playTitle || best.title;
-              content.playCover = content.playCover || best.image;
+              meta.playTitle = meta.playTitle || best.title;
+              meta.playCover = meta.playCover || best.image;
             } else if (lookupType === "venue" && best.meta) {
-              content.checkinName = content.checkinName || best.title;
-              content.checkinAddress =
-                content.checkinAddress || best.meta.address;
-              content.checkinLocality =
-                content.checkinLocality || best.meta.locality;
-              content.latitude = content.latitude || best.meta.lat;
-              content.longitude = content.longitude || best.meta.lng;
+              meta.checkinName = meta.checkinName || best.title;
+              meta.checkinAddress = meta.checkinAddress || best.meta.address;
+              meta.checkinLocality = meta.checkinLocality || best.meta.locality;
+              meta.latitude = meta.latitude || best.meta.lat;
+              meta.longitude = meta.longitude || best.meta.lng;
             }
+
+            content.kind_meta = meta;
 
             ctx.log.info(
               `Enriched ${kind} post with ${best.source} data: ${best.title}`,
@@ -1015,15 +1072,34 @@ export default {
           return;
         }
 
-        const textContent = extractTextFromContent(event.content);
-        if (!textContent.trim()) return;
-
         const slug = event.content.slug as string;
         const collection = event.collection;
         const sourceUrl = `${siteUrl.replace(/\/$/, "")}/${collection}/${slug}`;
 
-        const wrappedHtml = `<div>${textContent}</div>`;
-        const targetUrls = extractLinkedUrls(wrappedHtml, sourceUrl);
+        // POSSE: syndicate to pending Bridgy targets before generic
+        // webmention sending, so syndication links land promptly.
+        await syndicatePendingTargets(ctx, event, sourceUrl);
+
+        // Webmention targets: link URLs in the Portable Text body
+        // (markDef hrefs + bare URLs in span text) plus explicit
+        // citation fields (reply/like/repost/bookmark/quotation URLs).
+        const targetUrls = extractContentUrls(event.content);
+        for (const field of [
+          "in_reply_to",
+          "like_of",
+          "repost_of",
+          "bookmark_of",
+          "quotation_of",
+        ]) {
+          const value = event.content[field];
+          if (
+            typeof value === "string" &&
+            /^https?:\/\//.test(value) &&
+            !targetUrls.includes(value)
+          ) {
+            targetUrls.push(value);
+          }
+        }
         if (targetUrls.length === 0) return;
 
         ctx.log.info(
@@ -1389,10 +1465,15 @@ export default {
         ctx: PluginContext,
       ) => {
         const request = routeCtx.request;
+        const input = routeCtx.input ?? {};
 
-        if (request.method === "GET") {
-          const url = new URL(request.url);
-          const target = url.searchParams.get("target");
+        // List verified mentions: GET ?target=... on the raw plugin
+        // route, or { op: "list", target } from the site's wire route.
+        const isList = request.method === "GET" || input.op === "list";
+        if (isList) {
+          const target =
+            (input.target as string | undefined) ??
+            new URL(request.url).searchParams.get("target");
           if (!target) return { error: "Missing target query parameter" };
 
           const result = await ctx.storage.webmentions.query({
@@ -1408,41 +1489,195 @@ export default {
           };
         }
 
-        const input = routeCtx.input;
-        const source = input.source as string;
-        const target = input.target as string;
+        const source =
+          typeof input.source === "string" ? input.source : "";
+        const target =
+          typeof input.target === "string" ? input.target : "";
 
+        // Accepted target domains: configured site URL plus the host
+        // this route was actually served on (keeps local dev working
+        // before a site URL is configured). Never trust a caller-
+        // supplied origin — the route is publicly dispatchable, so a
+        // body field could name any domain.
         const siteUrl = await getSiteUrl(ctx);
-        const hostname = siteUrl ? new URL(siteUrl).hostname : "";
-        const acceptedDomains = hostname ? [hostname] : [];
+        const acceptedDomains: string[] = [];
+        for (const candidate of [siteUrl, request.url]) {
+          if (!candidate) continue;
+          try {
+            const host = new URL(candidate).hostname;
+            if (host && !acceptedDomains.includes(host)) {
+              acceptedDomains.push(host);
+            }
+          } catch {
+            // Ignore malformed URLs.
+          }
+        }
 
         const validation = validateWebmention(
-          source || "",
-          target || "",
+          source,
+          target,
           acceptedDomains,
         );
         if (!validation.valid) return { error: validation.error };
 
         const id = `${encodeURIComponent(source)}::${encodeURIComponent(target)}`;
 
-        const record: WebmentionRecord = {
-          source,
-          target,
-          verified: false,
-          type: "mention",
-          receivedAt: new Date().toISOString(),
-        };
+        // Anti-abuse: never persist a row we cannot verify. Without
+        // fetch capability there is no verification path at all, so an
+        // unauthenticated caller could grow storage without bound.
+        if (!ctx.http) {
+          ctx.log.warn(
+            "Webmention received but plugin has no HTTP capability; not stored",
+          );
+          return { error: "Webmention verification unavailable" };
+        }
 
-        await ctx.storage.webmentions.put(
-          id,
-          record as unknown as Record<string, unknown>,
-        );
+        // Re-submissions: keep the last verified record until the
+        // fresh verification succeeds (or proves the link is gone) —
+        // don't downgrade it to "pending" first.
+        const existing = (await ctx.storage.webmentions.get(id)) as
+          | (Record<string, unknown> & { verified?: boolean })
+          | null;
+        const hadVerified = existing?.verified === true;
+        if (!existing) {
+          const record: WebmentionRecord = {
+            source,
+            target,
+            verified: false,
+            type: "mention",
+            receivedAt: new Date().toISOString(),
+          };
+          await ctx.storage.webmentions.put(
+            id,
+            record as unknown as Record<string, unknown>,
+          );
+        }
 
-        if (ctx.http) {
-          void verifyInBackground(ctx, id, source, target);
+        // Verified before responding: the fetch is bounded (10s
+        // timeout, 1 MB cap), and awaiting means the work can't be
+        // dropped when the isolate finishes the response — plugins
+        // have no waitUntil to anchor background work to.
+        const outcome = await verifyInBackground(ctx, id, source, target);
+
+        // A submission that could not be verified (unreachable source,
+        // non-2xx, no link) must not leave an unverified row behind.
+        // Only a previously *verified* record survives a failed
+        // re-verification (transient failures must not delete it).
+        if (outcome !== "verified" && !hadVerified) {
+          await ctx.storage.webmentions.delete(id).catch(() => {});
+          return {
+            error:
+              "Verification failed: source could not be fetched or does not link to target",
+          };
         }
 
         return { status: "accepted" };
+      },
+    },
+
+    // ── IndieAuth server routes ────────────────────────────────────
+    // The site's Astro routes are the wire endpoints; these routes own
+    // the persisted authorization state (codes + tokens).
+
+    // PRIVATE: only the site's consent flow (which verifies the EmDash
+    // admin session server-side) may issue codes.
+    "indieauth-issue": {
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input as unknown as IssueCodeInput;
+        if (
+          !input?.clientId ||
+          !input?.redirectUri ||
+          !input?.codeChallenge ||
+          !input?.me
+        ) {
+          return {
+            error: "invalid_request",
+            error_description:
+              "clientId, redirectUri, codeChallenge, and me are required",
+          };
+        }
+        return issueAuthorizationCode(ctx, {
+          clientId: input.clientId,
+          redirectUri: input.redirectUri,
+          codeChallenge: input.codeChallenge,
+          scopes: Array.isArray(input.scopes) ? input.scopes : [],
+          me: input.me,
+        });
+      },
+    },
+
+    // PUBLIC: secured by possession of the single-use code + PKCE.
+    "indieauth-redeem": {
+      public: true,
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input ?? {};
+        return redeemAuthorizationCode(ctx, {
+          grantType: asString(input.grantType),
+          code: asString(input.code),
+          clientId: asString(input.clientId),
+          redirectUri: asString(input.redirectUri),
+          codeVerifier: asString(input.codeVerifier),
+          flow: input.flow === "profile" ? "profile" : "token",
+        });
+      },
+    },
+
+    // PUBLIC: token introspection for the Micropub endpoint.
+    "indieauth-verify": {
+      public: true,
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input ?? {};
+        return verifyAccessToken(
+          ctx,
+          asString(input.token),
+          asString(input.requiredScope),
+        );
+      },
+    },
+
+    // PUBLIC: RFC 7009-style revocation (secured by token possession).
+    "indieauth-revoke": {
+      public: true,
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input ?? {};
+        return revokeAccessToken(ctx, asString(input.token));
+      },
+    },
+
+    // PUBLIC: Micropub config data (syndication targets from settings).
+    "micropub-config": {
+      public: true,
+      handler: async (
+        _routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const targetsRaw = await ctx.kv.get<string>(
+          "settings:syndicationTargets",
+        );
+        const targets: SyndicationTarget[] = targetsRaw
+          ? JSON.parse(targetsRaw)
+          : [];
+        return {
+          "syndicate-to": targets
+            .filter((t) => t.enabled !== false)
+            .map((t) => ({
+              uid: t.uid,
+              name: t.name,
+              ...(t.service ? { service: t.service } : {}),
+            })),
+        };
       },
     },
 
@@ -1560,32 +1795,180 @@ export default {
   },
 };
 
+// ─── POSSE Syndication (Bridgy) ─────────────────────────────────────────
+
+interface SyndicationState {
+  targets?: string[];
+  links?: Array<{ url: string; targetUid?: string; syndicatedAt?: string }>;
+}
+
+/**
+ * Send Bridgy Publish webmentions for the post's pending syndication
+ * targets and store the returned silo URLs in the `syndication` field.
+ *
+ * The post page must render (invisible) anchors to each pending target
+ * for Bridgy to accept the webmention — the site's post template does
+ * this from `syndication.targets`. Successful targets move to
+ * `syndication.links`; failed Bridgy targets stay pending so the next
+ * save retries them (syndication only runs on save, so this cannot
+ * loop). Non-Bridgy targets are dropped with a warning.
+ */
+async function syndicatePendingTargets(
+  ctx: PluginContext,
+  event: ContentHookEvent,
+  sourceUrl: string,
+): Promise<void> {
+  const raw = event.content.syndication;
+  const state: SyndicationState =
+    raw && typeof raw === "object" ? (raw as SyndicationState) : {};
+  const pending = Array.isArray(state.targets) ? state.targets : [];
+  if (pending.length === 0) return;
+
+  if (!ctx.http) {
+    ctx.log.warn("network:fetch capability required for POSSE syndication");
+    return;
+  }
+  if (!ctx.content?.update) {
+    ctx.log.warn("content:write capability required for POSSE syndication");
+    return;
+  }
+
+  const links = Array.isArray(state.links) ? [...state.links] : [];
+  const stillPending: string[] = [];
+
+  for (const targetUid of pending) {
+    if (!isBridgyPublishTarget(targetUid)) {
+      ctx.log.warn(
+        `Dropping non-Bridgy syndication target (direct silo APIs are not supported): ${targetUid}`,
+      );
+      continue;
+    }
+    try {
+      const body = new URLSearchParams({
+        source: sourceUrl,
+        target: targetUid,
+      });
+      const response = await ctx.http.fetch(BRIDGY_WEBMENTION_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      const result = parseBridgyResponse(
+        response.status,
+        await response.text(),
+      );
+      if (result.url) {
+        links.push({
+          url: result.url,
+          targetUid,
+          syndicatedAt: new Date().toISOString(),
+        });
+        ctx.log.info(`Syndicated ${sourceUrl} -> ${result.url}`);
+      } else {
+        stillPending.push(targetUid);
+        ctx.log.warn(
+          `Bridgy publish failed for ${targetUid} (will retry on next save): ${result.error}`,
+        );
+      }
+    } catch (err) {
+      stillPending.push(targetUid);
+      ctx.log.warn(
+        `Bridgy publish error for ${targetUid} (will retry on next save): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // Repo-level update: writes only the syndication field and does not
+  // re-trigger content hooks, so this cannot loop.
+  const entryId = event.content.id as string | undefined;
+  if (!entryId) {
+    ctx.log.warn("Cannot store syndication links: content id missing");
+    return;
+  }
+  try {
+    await ctx.content.update(event.collection, entryId, {
+      syndication: { targets: stillPending, links },
+    });
+  } catch (err) {
+    ctx.log.warn(
+      `Failed to store syndication links: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 // ─── Background Verification ─────────────────────────────────────────────
+
+/** Maximum source size read during verification (1 MB per spec guidance). */
+const MAX_VERIFY_SOURCE_BYTES = 1_048_576;
+
+/** Maximum time to wait for the source fetch. */
+const VERIFY_FETCH_TIMEOUT_MS = 10_000;
+
+/** Read a response body as text, stopping after `maxBytes`. */
+async function readBodyCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return response.text();
+
+  const decoder = new TextDecoder();
+  let text = "";
+  let total = 0;
+  while (total < maxBytes) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+  }
+  await reader.cancel().catch(() => {});
+  return text + decoder.decode();
+}
+
+/** Outcome of a verification pass, so callers can clean up. */
+type VerifyOutcome = "verified" | "rejected" | "failed";
 
 async function verifyInBackground(
   ctx: PluginContext,
   id: string,
   source: string,
   target: string,
-): Promise<void> {
+): Promise<VerifyOutcome> {
   try {
-    if (!ctx.http) return;
+    if (!ctx.http) return "failed";
 
-    const response = await ctx.http.fetch(source, {
-      headers: { Accept: "text/html" },
-    });
+    // One timeout budget for fetch AND body read — a slow-drip source
+    // must not hold the request open after headers arrive.
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      VERIFY_FETCH_TIMEOUT_MS,
+    );
+    let response: Response;
+    let html: string;
+    try {
+      response = await ctx.http.fetch(source, {
+        headers: { Accept: "text/html" },
+        signal: controller.signal,
+      });
 
-    if (response.status === 410) {
-      await ctx.storage.webmentions.delete(id);
-      return;
+      if (response.status === 410) {
+        await ctx.storage.webmentions.delete(id);
+        return "rejected";
+      }
+
+      if (response.status < 200 || response.status >= 300) {
+        ctx.log.warn(
+          `Verification failed: source returned ${response.status}`,
+        );
+        return "failed";
+      }
+
+      html = await readBodyCapped(response, MAX_VERIFY_SOURCE_BYTES);
+    } finally {
+      clearTimeout(timeout);
     }
 
-    if (response.status < 200 || response.status >= 300) {
-      ctx.log.warn(`Verification failed: source returned ${response.status}`);
-      return;
-    }
-
-    const html = await response.text();
     const contentType = response.headers.get("Content-Type") || "text/html";
 
     if (!sourceLinksToTarget(html, target, contentType)) {
@@ -1593,7 +1976,7 @@ async function verifyInBackground(
       ctx.log.info(
         "Deleted unverified webmention: source does not link to target",
       );
-      return;
+      return "rejected";
     }
 
     const entry = simpleParseMf2(html);
@@ -1624,10 +2007,12 @@ async function verifyInBackground(
     ctx.log.info(
       `Verified webmention: ${source} -> ${target} (${displayType})`,
     );
+    return "verified";
   } catch (err) {
     ctx.log.warn(
       `Verification error: ${err instanceof Error ? err.message : String(err)}`,
     );
+    return "failed";
   }
 }
 

@@ -61,3 +61,10 @@ export {
   discoverMicropubFromHtml,
   discoverMicropub,
 } from "./discovery.js";
+
+// Content mapping (Micropub → post fields)
+export {
+  mapMicropubToPostFields,
+  textToPortableText,
+} from "./content-mapping.js";
+export type { MappedPost, PortableTextBlock } from "./content-mapping.js";

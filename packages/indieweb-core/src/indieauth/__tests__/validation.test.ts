@@ -75,10 +75,10 @@ describe("validateClientId", () => {
     expect(result.error).toContain("username or password");
   });
 
-  it("rejects non-loopback URL with port", () => {
-    const result = validateClientId("https://example.com:8080/");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("port");
+  it("accepts non-loopback URL with port (client ids MAY contain a port)", () => {
+    expect(validateClientId("https://example.com:8080/")).toEqual({
+      valid: true,
+    });
   });
 
   it("rejects arbitrary IPv4 address", () => {
@@ -167,6 +167,22 @@ describe("validateRedirectUri", () => {
     );
     expect(result.valid).toBe(false);
     expect(result.error).toContain("no registered redirect URIs");
+  });
+
+  it("rejects scheme downgrade on the same host", () => {
+    const result = validateRedirectUri(
+      "http://app.example.com/callback",
+      "https://app.example.com/",
+    );
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects a different port on the same host", () => {
+    const result = validateRedirectUri(
+      "https://app.example.com:8443/callback",
+      "https://app.example.com/",
+    );
+    expect(result.valid).toBe(false);
   });
 
   it("rejects different host with empty registration list", () => {

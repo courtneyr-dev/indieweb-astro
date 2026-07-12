@@ -21,9 +21,10 @@ const LOOPBACK_V6 = "[::1]";
  * - Must have a path component (bare domain gets "/" appended)
  * - No fragment
  * - No username or password
- * - No port (except for loopback)
  * - Host must be a domain name or loopback IP
  * - No single-dot or double-dot path segments
+ *
+ * Unlike profile URLs, client identifier URLs MAY contain a port.
  *
  * @example
  * ```ts
@@ -64,14 +65,6 @@ export function validateClientId(url: string): ValidationResult {
     parsed.hostname === LOOPBACK_V4 ||
     parsed.hostname === LOOPBACK_V6 ||
     parsed.hostname === "localhost";
-
-  // No port (except loopback)
-  if (parsed.port && !isLoopback) {
-    return {
-      valid: false,
-      error: "client_id must not contain a port (except for loopback)",
-    };
-  }
 
   // Host must be a domain or loopback, not an arbitrary IP
   if (!isLoopback && isIpAddress(parsed.hostname)) {
@@ -143,15 +136,14 @@ export function validateRedirectUri(
     };
   }
 
-  // Same host — always allowed
-  if (
-    parsedRedirect.hostname.toLowerCase() ===
-    parsedClient.hostname.toLowerCase()
-  ) {
+  // Same origin (scheme + host + port) — always allowed. Comparing the
+  // full origin prevents an https client_id from redirecting to an
+  // http URI (downgrade) or to a different port on the same host.
+  if (parsedRedirect.origin === parsedClient.origin) {
     return { valid: true };
   }
 
-  // Different host — must match a registered URI exactly
+  // Different origin — must match a registered URI exactly
   if (!registeredUris || registeredUris.length === 0) {
     return {
       valid: false,

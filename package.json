@@ -5,7 +5,8 @@
   "workspaces": [
     "packages/indieweb-core",
     "packages/astro-indieweb",
-    "packages/emdash-indieweb"
+    "packages/emdash-indieweb",
+    "packages/emdash-content-analysis"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
