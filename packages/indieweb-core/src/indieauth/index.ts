@@ -66,3 +66,21 @@ export {
   canonicalizeUrl,
   profileUrlsMatch,
 } from "./validation.js";
+
+// Server-side primitives
+export type {
+  ValidatedAuthorizationRequest,
+  AuthorizationCodeRecord,
+  AccessTokenRecord,
+  AuthorizationServerError,
+} from "./server.js";
+export {
+  CODE_TTL_MS,
+  TOKEN_TTL_MS,
+  TXN_TTL_MS,
+  validateAuthorizationRequest,
+  isAuthorizationServerError,
+  generateSecret,
+  hashSecret,
+  isExpired,
+} from "./server.js";

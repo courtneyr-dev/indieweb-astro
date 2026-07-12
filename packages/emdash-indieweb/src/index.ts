@@ -76,9 +76,23 @@ export function emdashIndieweb(
     ],
     allowedHosts: ["*"],
     storage: {
+      // Document id is `${source}::${target}` so the pair is unique by
+      // construction; no uniqueIndexes (string[] means one constraint per
+      // column, which would wrongly reject one source mentioning two targets).
       webmentions: {
         indexes: ["source", "target", "type", "verified", "receivedAt"],
-        uniqueIndexes: ["source", "target"],
+      },
+      // IndieAuth server state. Document ids are SHA-256 hashes of the
+      // secrets (codes/tokens), so plaintext secrets are never stored.
+      indieauth_codes: {
+        indexes: ["clientId", "expiresAt"],
+      },
+      indieauth_tokens: {
+        indexes: ["clientId", "expiresAt"],
+      },
+      // Pending authorization transactions for the consent screen.
+      indieauth_txns: {
+        indexes: ["expiresAt"],
       },
     },
     adminPages: [

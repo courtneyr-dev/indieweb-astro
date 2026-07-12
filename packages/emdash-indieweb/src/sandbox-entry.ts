@@ -38,6 +38,21 @@ import {
   buildRelAttribute,
 } from "@opensourcetogether/indieweb-core/xfn";
 import type { SyndicationTarget } from "@opensourcetogether/indieweb-core/posse";
+import {
+  BRIDGY_WEBMENTION_ENDPOINT,
+  isBridgyPublishTarget,
+  parseBridgyResponse,
+} from "@opensourcetogether/indieweb-core/posse";
+import {
+  issueAuthorizationCode,
+  redeemAuthorizationCode,
+  verifyAccessToken,
+  revokeAccessToken,
+} from "./indieauth-routes.js";
+import type {
+  IssueCodeInput,
+  RedeemCodeInput,
+} from "./indieauth-routes.js";
 import { buildApiCredentialsPage, saveApiCredentials } from "./api-admin.js";
 import {
   lookupMusic,
@@ -866,10 +881,11 @@ export default {
         if (!content.kind) {
           const mf2Props: Record<string, string[]> = {};
           const propMappings: Array<[string, string]> = [
-            ["inReplyTo", "in-reply-to"],
-            ["likeOf", "like-of"],
-            ["repostOf", "repost-of"],
-            ["bookmarkOf", "bookmark-of"],
+            ["in_reply_to", "in-reply-to"],
+            ["like_of", "like-of"],
+            ["repost_of", "repost-of"],
+            ["bookmark_of", "bookmark-of"],
+            ["quotation_of", "quotation-of"],
             ["rsvp", "rsvp"],
           ];
 
@@ -906,12 +922,18 @@ export default {
           }
         }
 
-        // Enrich metadata from external APIs when lookupQuery is present
-        // but enriched metadata hasn't been stored yet
+        // Enrich metadata from external APIs when kind_meta.lookupQuery is
+        // present but enriched metadata hasn't been stored yet. All lifelog
+        // metadata lives inside the kind_meta JSON field so the posts schema
+        // stays small (the schema rejects unknown top-level fields).
         const kind = content.kind as string | undefined;
-        const lookupQuery = content.lookupQuery as string | undefined;
-        if (!kind || !lookupQuery || content.lookupEnriched || !ctx.http)
-          return;
+        const meta = (
+          content.kind_meta && typeof content.kind_meta === "object"
+            ? content.kind_meta
+            : {}
+        ) as Record<string, unknown>;
+        const lookupQuery = meta.lookupQuery as string | undefined;
+        if (!kind || !lookupQuery || meta.lookupEnriched || !ctx.http) return;
 
         try {
           const kindToLookup: Record<string, string> = {
@@ -940,7 +962,7 @@ export default {
               results = await lookupBook(
                 ctx,
                 lookupQuery,
-                content.isbn as string | undefined,
+                meta.isbn as string | undefined,
               );
               break;
             case "game":
@@ -953,41 +975,40 @@ export default {
 
           if (results && results.length > 0) {
             const best = results[0];
-            content.lookupEnriched = true;
-            content.lookupSource = best.source;
-            content.lookupSourceId = best.sourceId;
-            content.lookupMeta = best.meta;
+            meta.lookupEnriched = true;
+            meta.lookupSource = best.source;
+            meta.lookupSourceId = best.sourceId;
+            meta.lookupMeta = best.meta;
 
-            // Map enriched fields to kind-specific content fields
+            // Map enriched fields to kind-specific metadata keys
             if (lookupType === "music" && best.meta) {
-              content.listenTrack = content.listenTrack || best.title;
-              content.listenArtist = content.listenArtist || best.meta.artist;
-              content.listenAlbum = content.listenAlbum || best.meta.album;
-              content.listenMbid = content.listenMbid || best.meta.mbid;
+              meta.listenTrack = meta.listenTrack || best.title;
+              meta.listenArtist = meta.listenArtist || best.meta.artist;
+              meta.listenAlbum = meta.listenAlbum || best.meta.album;
+              meta.listenMbid = meta.listenMbid || best.meta.mbid;
             } else if (lookupType === "video" && best.meta) {
-              content.watchTitle = content.watchTitle || best.title;
-              content.watchYear = content.watchYear || best.year;
-              content.watchPoster = content.watchPoster || best.image;
-              content.watchTmdbId = content.watchTmdbId || best.meta.tmdbId;
-              content.watchMediaType =
-                content.watchMediaType || best.meta.mediaType;
+              meta.watchTitle = meta.watchTitle || best.title;
+              meta.watchYear = meta.watchYear || best.year;
+              meta.watchPoster = meta.watchPoster || best.image;
+              meta.watchTmdbId = meta.watchTmdbId || best.meta.tmdbId;
+              meta.watchMediaType = meta.watchMediaType || best.meta.mediaType;
             } else if (lookupType === "book" && best.meta) {
-              content.readTitle = content.readTitle || best.title;
-              content.readAuthor = content.readAuthor || best.meta.author;
-              content.readIsbn = content.readIsbn || best.meta.isbn;
-              content.readCover = content.readCover || best.image;
+              meta.readTitle = meta.readTitle || best.title;
+              meta.readAuthor = meta.readAuthor || best.meta.author;
+              meta.readIsbn = meta.readIsbn || best.meta.isbn;
+              meta.readCover = meta.readCover || best.image;
             } else if (lookupType === "game") {
-              content.playTitle = content.playTitle || best.title;
-              content.playCover = content.playCover || best.image;
+              meta.playTitle = meta.playTitle || best.title;
+              meta.playCover = meta.playCover || best.image;
             } else if (lookupType === "venue" && best.meta) {
-              content.checkinName = content.checkinName || best.title;
-              content.checkinAddress =
-                content.checkinAddress || best.meta.address;
-              content.checkinLocality =
-                content.checkinLocality || best.meta.locality;
-              content.latitude = content.latitude || best.meta.lat;
-              content.longitude = content.longitude || best.meta.lng;
+              meta.checkinName = meta.checkinName || best.title;
+              meta.checkinAddress = meta.checkinAddress || best.meta.address;
+              meta.checkinLocality = meta.checkinLocality || best.meta.locality;
+              meta.latitude = meta.latitude || best.meta.lat;
+              meta.longitude = meta.longitude || best.meta.lng;
             }
+
+            content.kind_meta = meta;
 
             ctx.log.info(
               `Enriched ${kind} post with ${best.source} data: ${best.title}`,
@@ -1015,15 +1036,38 @@ export default {
           return;
         }
 
-        const textContent = extractTextFromContent(event.content);
-        if (!textContent.trim()) return;
-
         const slug = event.content.slug as string;
         const collection = event.collection;
         const sourceUrl = `${siteUrl.replace(/\/$/, "")}/${collection}/${slug}`;
 
+        // POSSE: syndicate to pending Bridgy targets before generic
+        // webmention sending, so syndication links land promptly.
+        await syndicatePendingTargets(ctx, event, sourceUrl);
+
+        const textContent = extractTextFromContent(event.content);
+
+        // Webmention targets: URLs in the body plus explicit citation
+        // fields (reply/like/repost/bookmark/quotation URLs).
         const wrappedHtml = `<div>${textContent}</div>`;
-        const targetUrls = extractLinkedUrls(wrappedHtml, sourceUrl);
+        const targetUrls = textContent.trim()
+          ? extractLinkedUrls(wrappedHtml, sourceUrl)
+          : [];
+        for (const field of [
+          "in_reply_to",
+          "like_of",
+          "repost_of",
+          "bookmark_of",
+          "quotation_of",
+        ]) {
+          const value = event.content[field];
+          if (
+            typeof value === "string" &&
+            /^https?:\/\//.test(value) &&
+            !targetUrls.includes(value)
+          ) {
+            targetUrls.push(value);
+          }
+        }
         if (targetUrls.length === 0) return;
 
         ctx.log.info(
@@ -1389,10 +1433,15 @@ export default {
         ctx: PluginContext,
       ) => {
         const request = routeCtx.request;
+        const input = routeCtx.input ?? {};
 
-        if (request.method === "GET") {
-          const url = new URL(request.url);
-          const target = url.searchParams.get("target");
+        // List verified mentions: GET ?target=... on the raw plugin
+        // route, or { op: "list", target } from the site's wire route.
+        const isList = request.method === "GET" || input.op === "list";
+        if (isList) {
+          const target =
+            (input.target as string | undefined) ??
+            new URL(request.url).searchParams.get("target");
           if (!target) return { error: "Missing target query parameter" };
 
           const result = await ctx.storage.webmentions.query({
@@ -1408,13 +1457,25 @@ export default {
           };
         }
 
-        const input = routeCtx.input;
         const source = input.source as string;
         const target = input.target as string;
 
+        // Accepted target domains: configured site URL, plus the
+        // request origin forwarded by the site's wire route (keeps
+        // local dev working before a site URL is configured).
         const siteUrl = await getSiteUrl(ctx);
-        const hostname = siteUrl ? new URL(siteUrl).hostname : "";
-        const acceptedDomains = hostname ? [hostname] : [];
+        const acceptedDomains: string[] = [];
+        for (const candidate of [siteUrl, input.origin as string | undefined]) {
+          if (!candidate) continue;
+          try {
+            const host = new URL(candidate).hostname;
+            if (host && !acceptedDomains.includes(host)) {
+              acceptedDomains.push(host);
+            }
+          } catch {
+            // Ignore malformed URLs.
+          }
+        }
 
         const validation = validateWebmention(
           source || "",
@@ -1443,6 +1504,112 @@ export default {
         }
 
         return { status: "accepted" };
+      },
+    },
+
+    // ── IndieAuth server routes ────────────────────────────────────
+    // The site's Astro routes are the wire endpoints; these routes own
+    // the persisted authorization state (codes + tokens).
+
+    // PRIVATE: only the site's consent flow (which verifies the EmDash
+    // admin session server-side) may issue codes.
+    "indieauth-issue": {
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input as unknown as IssueCodeInput;
+        if (
+          !input?.clientId ||
+          !input?.redirectUri ||
+          !input?.codeChallenge ||
+          !input?.me
+        ) {
+          return {
+            error: "invalid_request",
+            error_description:
+              "clientId, redirectUri, codeChallenge, and me are required",
+          };
+        }
+        return issueAuthorizationCode(ctx, {
+          clientId: input.clientId,
+          redirectUri: input.redirectUri,
+          codeChallenge: input.codeChallenge,
+          scopes: Array.isArray(input.scopes) ? input.scopes : [],
+          me: input.me,
+        });
+      },
+    },
+
+    // PUBLIC: secured by possession of the single-use code + PKCE.
+    "indieauth-redeem": {
+      public: true,
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input ?? {};
+        return redeemAuthorizationCode(ctx, {
+          grantType: input.grantType as string | undefined,
+          code: input.code as string | undefined,
+          clientId: input.clientId as string | undefined,
+          redirectUri: input.redirectUri as string | undefined,
+          codeVerifier: input.codeVerifier as string | undefined,
+          flow: input.flow === "profile" ? "profile" : "token",
+        });
+      },
+    },
+
+    // PUBLIC: token introspection for the Micropub endpoint.
+    "indieauth-verify": {
+      public: true,
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input ?? {};
+        return verifyAccessToken(
+          ctx,
+          input.token as string | undefined,
+          input.requiredScope as string | undefined,
+        );
+      },
+    },
+
+    // PUBLIC: RFC 7009-style revocation (secured by token possession).
+    "indieauth-revoke": {
+      public: true,
+      handler: async (
+        routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const input = routeCtx.input ?? {};
+        return revokeAccessToken(ctx, input.token as string | undefined);
+      },
+    },
+
+    // PUBLIC: Micropub config data (syndication targets from settings).
+    "micropub-config": {
+      public: true,
+      handler: async (
+        _routeCtx: { input: Record<string, unknown> },
+        ctx: PluginContext,
+      ) => {
+        const targetsRaw = await ctx.kv.get<string>(
+          "settings:syndicationTargets",
+        );
+        const targets: SyndicationTarget[] = targetsRaw
+          ? JSON.parse(targetsRaw)
+          : [];
+        return {
+          "syndicate-to": targets
+            .filter((t) => t.enabled !== false)
+            .map((t) => ({
+              uid: t.uid,
+              name: t.name,
+              ...(t.service ? { service: t.service } : {}),
+            })),
+        };
       },
     },
 
@@ -1559,6 +1726,103 @@ export default {
     },
   },
 };
+
+// ─── POSSE Syndication (Bridgy) ─────────────────────────────────────────
+
+interface SyndicationState {
+  targets?: string[];
+  links?: Array<{ url: string; targetUid?: string; syndicatedAt?: string }>;
+}
+
+/**
+ * Send Bridgy Publish webmentions for the post's pending syndication
+ * targets and store the returned silo URLs in the `syndication` field.
+ *
+ * The post page must render (invisible) anchors to each pending target
+ * for Bridgy to accept the webmention — the site's post template does
+ * this from `syndication.targets`. Processed targets are removed
+ * whether they succeed or fail, so saves never retry forever;
+ * failures are logged and can be retried by re-adding the target.
+ */
+async function syndicatePendingTargets(
+  ctx: PluginContext,
+  event: ContentHookEvent,
+  sourceUrl: string,
+): Promise<void> {
+  const raw = event.content.syndication;
+  const state: SyndicationState =
+    raw && typeof raw === "object" ? (raw as SyndicationState) : {};
+  const pending = Array.isArray(state.targets) ? state.targets : [];
+  if (pending.length === 0) return;
+
+  if (!ctx.http) {
+    ctx.log.warn("network:fetch capability required for POSSE syndication");
+    return;
+  }
+  if (!ctx.content?.update) {
+    ctx.log.warn("content:write capability required for POSSE syndication");
+    return;
+  }
+
+  const links = Array.isArray(state.links) ? [...state.links] : [];
+
+  for (const targetUid of pending) {
+    if (!isBridgyPublishTarget(targetUid)) {
+      ctx.log.warn(
+        `Skipping non-Bridgy syndication target (direct silo APIs are not supported): ${targetUid}`,
+      );
+      continue;
+    }
+    try {
+      const body = new URLSearchParams({
+        source: sourceUrl,
+        target: targetUid,
+      });
+      const response = await ctx.http.fetch(BRIDGY_WEBMENTION_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      const result = parseBridgyResponse(
+        response.status,
+        await response.text(),
+      );
+      if (result.url) {
+        links.push({
+          url: result.url,
+          targetUid,
+          syndicatedAt: new Date().toISOString(),
+        });
+        ctx.log.info(`Syndicated ${sourceUrl} -> ${result.url}`);
+      } else {
+        ctx.log.warn(
+          `Bridgy publish failed for ${targetUid}: ${result.error}`,
+        );
+      }
+    } catch (err) {
+      ctx.log.warn(
+        `Bridgy publish error for ${targetUid}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // Repo-level update: writes only the syndication field and does not
+  // re-trigger content hooks, so this cannot loop.
+  const entryId = event.content.id as string | undefined;
+  if (!entryId) {
+    ctx.log.warn("Cannot store syndication links: content id missing");
+    return;
+  }
+  try {
+    await ctx.content.update(event.collection, entryId, {
+      syndication: { targets: [], links },
+    });
+  } catch (err) {
+    ctx.log.warn(
+      `Failed to store syndication links: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
 
 // ─── Background Verification ─────────────────────────────────────────────
 
